@@ -5,7 +5,7 @@
 SERVICES := engine data ingest
 
 .PHONY: install lint format typecheck test coverage security version \
-        docker-build smoke clean
+        docker-build smoke clean jenkins-build jenkins-up jenkins-down jenkins-logs
 
 ## install: uv sync every service (runtime + dev dependencies)
 install:
@@ -75,3 +75,19 @@ clean:
 	@for s in $(SERVICES); do \
 		(cd services/$$s && rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov); \
 	done
+
+## jenkins-build: build the Jenkins controller image
+jenkins-build:
+	docker build -t bituach-yashir-jenkins:local ci/docker/jenkins
+
+## jenkins-up: start the controller (http://localhost:8080, admin / admin)
+jenkins-up:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File ci/jenkins.ps1 up
+
+## jenkins-down: remove the controller, keep JENKINS_HOME (jobs/credentials)
+jenkins-down:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File ci/jenkins.ps1 down
+
+## jenkins-logs: follow controller logs
+jenkins-logs:
+	docker logs -f bituach-jenkins

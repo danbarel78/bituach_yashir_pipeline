@@ -38,8 +38,10 @@ failures=0
 total=0
 
 # fetch <path> - GET through the ingress, DNS pinned to the local controller.
+# SMOKE_RESOLVE_IP lets the same script run from a container, where 127.0.0.1
+# is the container itself; the Jenkins pipeline sets it to host.docker.internal.
 fetch() {
-  curl -sk --max-time 10 --resolve "${HOST}:443:127.0.0.1" "https://${HOST}$1"
+  curl -sk --max-time 10 --resolve "${HOST}:443:${SMOKE_RESOLVE_IP:-127.0.0.1}" "https://${HOST}$1"
 }
 
 check() {
