@@ -1,8 +1,6 @@
 """Public API contracts."""
 
-from typing import Annotated
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ServiceNameResponse(BaseModel):
