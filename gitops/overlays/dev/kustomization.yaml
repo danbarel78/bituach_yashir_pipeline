@@ -25,16 +25,17 @@ resources:
   - ingress.yaml
   - ingress-services.yaml
 
-# Images are imported into the node by scripts/load-images.sh because GHCR push
-# is not set up yet (Phase 4). Phase 4 replaces these with digest pins via
-# `kustomize edit set image ...@sha256:...`, which is the real target state.
+# Images are pinned by digest, not tag. A tag is mutable - it can be moved to
+# different bytes - so the digest is the only honest answer to "what is
+# deployed?". The three digests below were published to GHCR on 2026-11-18
+# from tag 0.0.1-dev.0-11e3604 and verified with a logged-out pull.
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine
-    newTag: local
+    digest: sha256:8cad16f7ca56644f45bf5bf2d6f4cc841d0b4c0c84276a3473b3256335878c05
   - name: ghcr.io/danbarel78/bituach-yashir-data
-    newTag: local
+    digest: sha256:26e14ab056cd9882cb4d88ccfe48dc94fba20d2afe96411d19dd5ae40f456d50
   - name: ghcr.io/danbarel78/bituach-yashir-ingest
-    newTag: local
+    digest: sha256:0f8239d43228a48aa23ae919658e1992bd891937ad6b039c5a389508351cc82c
 
 # One replica per service: no autoscaling in dev (HPA is disabled by design).
 replicas:

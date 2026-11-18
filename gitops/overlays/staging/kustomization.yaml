@@ -17,13 +17,16 @@ resources:
   - ingress.yaml
   - ingress-services.yaml
 
+# Images are pinned by digest: staging receives a specific, immutable build,
+# never "whatever the tag points at today". Same digests as dev for this first
+# cutover; promotion later repoints only this overlay.
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine
-    newTag: local
+    digest: sha256:8cad16f7ca56644f45bf5bf2d6f4cc841d0b4c0c84276a3473b3256335878c05
   - name: ghcr.io/danbarel78/bituach-yashir-data
-    newTag: local
+    digest: sha256:26e14ab056cd9882cb4d88ccfe48dc94fba20d2afe96411d19dd5ae40f456d50
   - name: ghcr.io/danbarel78/bituach-yashir-ingest
-    newTag: local
+    digest: sha256:0f8239d43228a48aa23ae919658e1992bd891937ad6b039c5a389508351cc82c
 
 # minReplicas of the HPA is 2, so the declared count matches it. A rolling
 # update with maxUnavailable 0 therefore never dips below 2 ready pods.
