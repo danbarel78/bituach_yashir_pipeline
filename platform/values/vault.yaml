@@ -1,0 +1,55 @@
+# Vault - dev mode, single node, deliberately non-production.
+#
+# Dev mode means: in-memory storage, automatically unsealed, root token "root".
+# That is exactly what the POC needs (nothing to persist, nothing to unseal by
+# hand) and it is explicitly called out as a risk in handoff.md §16. The
+# production path (Raft storage, auto-unseal via KMS/Transit, Kubernetes auth
+# with bound service accounts) is written up in docs/secrets.md.
+#
+# The injector sidecar agent is disabled: secrets reach pods through
+# External Secrets Operator, not through Vault's own injector.
+
+server:
+  dev:
+    enabled: true
+    # Root token for local use only. It is not committed anywhere; ESO is the
+    # only consumer and its token lives in a Kubernetes Secret.
+    devRootToken: "root"
+
+  standalone:
+    enabled: false
+
+  dataStorage:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: vault.localhost
+        paths:
+          - /
+    tls:
+      - secretName: vault-tls
+        hosts:
+          - vault.localhost
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+
+injector:
+  enabled: false
+
+csi:
+  enabled: false

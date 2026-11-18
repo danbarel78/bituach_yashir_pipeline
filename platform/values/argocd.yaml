@@ -1,0 +1,108 @@
+# Argo CD - the GitOps reconciler for all three environments.
+#
+# Exposed at https://argocd.localhost. TLS terminates at the ingress controller
+# (see platform/values/ingress-nginx.yaml), so the Argo CD server itself runs
+# with server.insecure=true: plain HTTP inside the cluster, encrypted outside.
+# The TLS secret `argocd-server-tls` is created by
+# scripts/gen-self-signed-cert.sh before this chart is installed.
+
+global:
+  domain: argocd.localhost
+
+configs:
+  params:
+    # Ingress-terminated TLS: no double encryption, no redirect loop.
+    server.insecure: true
+  # Sensible defaults for a POC: short reconciliation window, no resource
+  # tracking problems when apps are pruned.
+  cm:
+    timeout.reconciliation: 60s
+    application.resourceTrackingMethod: annotation
+
+server:
+  replicas: 1
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.localhost
+    pathType: Prefix
+    tls: true
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Keep the metrics endpoint available for the documented Prometheus design
+  # even though the monitoring stack itself is out of T0 scope.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+applicationSet:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Dex is not used: this POC authenticates with the local admin account. SSO is
+# documented as the production path in docs/decisions.md.
+dex:
+  enabled: false
+
+# Notifications controller is out of T0 scope.
+notifications:
+  enabled: false
+
+# Argo CD's own CRDs (Application, AppProject, ApplicationSet) MUST be
+# installed: without them argocd-server dies with
+# "the server could not find the requested resource (post appprojects.argoproj.io)".
+crds:
+  install: true
+  keep: false
