@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Development environment overlay.
+#
+# What the overlay owns (everything environment-specific):
+#   * namespace
+#   * image tag / digest (never "latest")
+#   * replica count
+#   * ENVIRONMENT value, injected through a generated ConfigMap
+#   * the public Ingress host
+#
+# What it does NOT own: probes, security context, rolling-update strategy and
+# the base resource shape - those are identical everywhere and live in base/.
+#
+# Base resources already carry the dev profile (50m/250m, 64Mi/128Mi); staging
+# and prod patch them upward.
+
+namespace: bituach-dev
+
+resources:
+  - ../../base/engine
+  - ../../base/data
+  - ../../base/ingest
+  - ingress.yaml
+
+# Images are imported into the node by scripts/load-images.sh because GHCR push
+# is not set up yet (Phase 4). Phase 4 replaces these with digest pins via
+# `kustomize edit set image ...@sha256:...`, which is the real target state.
+images:
+  - name: ghcr.io/danbarel78/bituach-yashir-engine
+    newTag: local
+  - name: ghcr.io/danbarel78/bituach-yashir-data
+    newTag: local
+  - name: ghcr.io/danbarel78/bituach-yashir-ingest
+    newTag: local
+
+# One replica per service: no autoscaling in dev (HPA is disabled by design).
+replicas:
+  - name: engine
+    count: 1
+  - name: data
+    count: 1
+  - name: ingest
+    count: 1
+
+configMapGenerator:
+  - name: bituach-env
+    literals:
+      - ENVIRONMENT=dev
+
+generatorOptions:
+  # The Deployments reference "bituach-env" by name, so no hash suffix.
+  disableNameSuffixHash: true

@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging environment overlay.
+#
+# Differences from dev (handoff.md §4): 2 replicas per service, 100m/500m CPU,
+# 128Mi/256Mi memory. Promoted from a release branch in the full GitFlow; for
+# Phase 3 all overlays track `develop` and promotion switching lands with the
+# Jenkinsfile.
+
+namespace: bituach-staging
+
+resources:
+  - ../../base/engine
+  - ../../base/data
+  - ../../base/ingest
+  - ingress.yaml
+
+images:
+  - name: ghcr.io/danbarel78/bituach-yashir-engine
+    newTag: local
+  - name: ghcr.io/danbarel78/bituach-yashir-data
+    newTag: local
+  - name: ghcr.io/danbarel78/bituach-yashir-ingest
+    newTag: local
+
+# minReplicas of the HPA is 2, so the declared count matches it. A rolling
+# update with maxUnavailable 0 therefore never dips below 2 ready pods.
+replicas:
+  - name: engine
+    count: 2
+  - name: data
+    count: 2
+  - name: ingest
+    count: 2
+
+configMapGenerator:
+  - name: bituach-env
+    literals:
+      - ENVIRONMENT=staging
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# One patch, applied to every Deployment in this overlay via the shared
+# part-of label - no per-service duplication.
+patches:
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/part-of=bituach-yashir
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 100m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 128Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi

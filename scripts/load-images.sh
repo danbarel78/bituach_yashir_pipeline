@@ -11,6 +11,11 @@
 #   ./scripts/load-images.sh                       # all three services, tag :local
 #   ./scripts/load-images.sh --tag 1.0.0           # a specific tag
 #   ./scripts/load-images.sh engine                # just one service
+#
+# Prerequisite: Docker Desktop must have WSL integration enabled for this
+# distro (Settings -> Resources -> WSL Integration). Without it the Windows
+# docker CLI is visible through interop but refuses to talk to the daemon, and
+# this script stops with a clear message instead of a confusing build error.
 
 # shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
@@ -30,6 +35,11 @@ done
 
 require_cmd docker
 require_cluster
+
+# `command -v docker` can succeed via Windows interop while still being unable
+# to reach the Docker socket - check the daemon, not just the binary.
+docker info >/dev/null 2>&1 \
+  || die "the docker CLI cannot reach the daemon from this shell - enable Docker Desktop > Settings > Resources > WSL Integration for this distro"
 
 # The node runs inside a Docker container; that container is the only place
 # where importing an image makes it visible to the kubelet.
