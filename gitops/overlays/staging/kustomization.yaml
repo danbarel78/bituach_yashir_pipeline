@@ -15,6 +15,7 @@ resources:
   - ../../base/data
   - ../../base/ingest
   - ingress.yaml
+  - ingress-services.yaml
 
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine

@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
-from data.api.routers import health, service
+from data.api.routers import health, items, service
 from data.core.config import get_settings
 from data.core.errors import install_exception_handlers
 from data.core.logging import configure_logging
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     )
     install_exception_handlers(application)
     application.include_router(service.router)
+    application.include_router(items.router)
     application.include_router(health.router)
 
     @application.middleware("http")

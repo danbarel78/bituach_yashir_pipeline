@@ -58,6 +58,16 @@ SAN_DNS=(
   "staging.bituach.localhost"
   "argocd.localhost"
   "vault.localhost"
+  # Per-service hostnames (gitops/overlays/*/ingress-services.yaml).
+  "engine.bituach.localhost"
+  "data.bituach.localhost"
+  "ingest.bituach.localhost"
+  "engine.dev.bituach.localhost"
+  "data.dev.bituach.localhost"
+  "ingest.dev.bituach.localhost"
+  "engine.staging.bituach.localhost"
+  "data.staging.bituach.localhost"
+  "ingest.staging.bituach.localhost"
 )
 
 secret_for() {

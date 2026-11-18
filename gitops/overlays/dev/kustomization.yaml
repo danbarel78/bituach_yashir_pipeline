@@ -23,6 +23,7 @@ resources:
   - ../../base/data
   - ../../base/ingest
   - ingress.yaml
+  - ingress-services.yaml
 
 # Images are imported into the node by scripts/load-images.sh because GHCR push
 # is not set up yet (Phase 4). Phase 4 replaces these with digest pins via
