@@ -351,6 +351,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-18 | **P0 scaffold complete** | Commit `433f9ac` on `main`: `.gitattributes` (LF enforcement), `.gitignore`, `base_version.json` (initial 0.0.0, relocated from stray `.opencode/skills/` location), `Makefile`, `ci/scripts/version.py`, `scripts/release.sh` (exec bit set); `develop` branched | P1 verify |
 | 2026-11-18 | **P1 services verified** | `feature/p1-services` merged to `develop` (`e90ef9b`); fixed `fix/data-quality-gates` merge (`c16ef99`): duplicate `[tool.pyright]` keys in data `pyproject.toml`, undefined `exc` in data `errors.py`, missing `ConfigDict` import in data schemas, magic numbers in data tests; all gates green — ruff ✅ mypy ✅ pytest: engine 95.5%, data 88.5%, ingest 88.5%; all three `/` endpoints answered HTTP 200 over real uvicorn runs | P2 cluster/platform |
 | 2026-11-18 | **P2 platform layer live** | `feature/p2-platform` merged to `develop`. Docker Desktop was **not running** at session start (restarted manually). Installed in WSL `Ubuntu`: kubectl 1.37.2 + helm 4.3.2 user-space (`~/.local/bin`, no sudo), kubeconfig wired. Platform: metrics-server 3.14.0, ingress-nginx 4.15.1 (LoadBalancer `172.18.0.5`, host 80/443), Argo CD 10.18.0 (v3.6.1), Vault 0.34.1 dev mode (2.0.4), ESO 2.15.0; self-signed TLS for 6 hosts generated at bootstrap (never committed). `scripts/verify.sh`: **21/21 checks pass** — Argo CD and Vault reachable over HTTPS, Vault initialized+unsealed, ESO 3 deployments ready, both ESO CRDs present | P3 Terraform + GitOps |
+| 2026-11-18 | **P3 all three environments live via Argo CD** | `feature/p3-gitops` merged. Terraform: 5 modules + 3 envs, `terraform validate` clean, all applied. Kustomize `base/{engine,data,ingest}` + 3 overlays. App-of-apps root → 3 child apps. Repo pushed to GitHub (`main` `433f9ac`, `develop`). **dev + staging `Synced/Healthy`; prod synced only after a manual `kubectl patch` operation — the approval gate works.** Smoke tests: **27/27** (9 per environment) through the real HTTPS ingress, `/version` reports `0.0.1-dev.0+dd16425` in every pod. `/aggregate`: `all_reachable: true` proving engine→data and engine→ingest over ClusterIP. HPA reports real CPU (3%/70%), not `<unknown>`. **Drift self-heal proven**: scaled dev `data` to 4 replicas, Argo CD reverted to 1 within ~1.5 s. Images built with `APP_VERSION`/`GIT_SHA` and imported into the node via `ctr` (GHCR push deferred at user's request) | P4 Jenkins |
 
 ---
 
@@ -363,6 +364,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | Docker | Docker Desktop installed at `%LOCALAPPDATA%\Programs\DockerDesktop`; **not running at session start** on 2026-11-18 (started manually); engine 29.8.2; k8s v1.36.1, node `desktop-control-plane` |
 | Present | `docker`, `kubectl` (1.37.2), `helm` (4.3.x), `terraform`, `git`, `python` 3.12.7 (+ py 3.11), `java` 21 |
 | WSL2 `Ubuntu` | kubectl 1.37.2 + helm 4.3.2 installed user-space in `~/.local/bin` (no sudo needed — `sudo` requires an interactive password); kubeconfig copied from Windows, API server reachable on `127.0.0.1` (mirrored networking) |
+| WSL2 / Docker | **Docker Desktop WSL integration is NOT enabled** for `Ubuntu`. `docker` resolves through Windows interop but cannot reach the daemon, so image builds/imports are run from PowerShell on this machine. `scripts/load-images.sh` detects this and fails with an actionable message. Enabling integration is a one-click change in Docker Desktop settings. |
 | Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd` CLI, `vault` CLI, `trivy`, `gh` |
 | Git identity | `Daniel Barel <dbarel@gmail.com>` |
 | Git config | `core.autocrlf=true`, `init.defaultBranch=master` |
@@ -374,8 +376,11 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 
 ## 20. Next action
 
-**P3 — Terraform + Kustomize + app-of-apps** (per §14): Terraform modules (`namespace`, `rbac`, `networkpolicy`, `resources`, `autoscaling`) and `envs/{dev,staging,prod}` with the §4 values; kustomize `base/` + `overlays/{dev,staging,prod}` with digest-pinned images and `strategy.rollingUpdate`; Argo CD app-of-apps root + three child apps. Checkpoint: dev pods Running via Argo CD.
+**P4 — Jenkins CI/CD** (per §14): containerized controller (`ci/docker/jenkins/Dockerfile`), configuration-as-code, full `Jenkinsfile` with the §10 stages (version → lint → test → SAST → dependency scan → build → Trivy → push → GitOps overlay update → verify → retention), plus `ci/scripts/scan.sh` and `docs/git-workflow.md`.
 
-Open at P3 start: the three GHCR images do not exist yet (no P4 push), so overlays need either locally built `:local` images imported via `scripts/load-images.sh`, or the P4 push must happen first. The offline path is already implemented, so P3 can proceed without registry access.
+**Open item #3 blocks the push stages:** no GitHub PAT yet and Docker is not authenticated to `ghcr.io`. The user chose to defer the push; images currently reach the cluster via `ctr images import` (`scripts/load-images.sh`, executed from PowerShell because Docker Desktop WSL integration is off). P4 needs either the PAT (recommended path) or the Jenkinsfile's push stage demonstrated via the local-import fallback.
 
-Note: §14's P0 checkpoint text said `0.1.0-dev.N` on develop, but the approved §6 rule (develop = patch+1 from base) yields `0.0.1-dev.N` from the initial 0.0.0 base — §6 was followed. After the first `release.sh` run (base → X.Y.Z), develop builds match the §6 table exactly.
+Known follow-ups recorded during P3:
+- Overlays pin `newTag: local`; they must switch to `newImage@sha256:…` digests once GHCR push works (§6 requires immutable digest pins).
+- All three child Applications track `targetRevision: develop`; promotion wiring (release branch for staging, tag for prod) is P4/P6 work.
+- Argo CD emits a finalizer warning (`resources-finalizer.argocd.argoproj.io` lacks a `/`); cosmetic on k8s 1.36, left as the Argo CD documented value.
