@@ -1,0 +1,15 @@
+# Normalize all text files to LF in the repository and on checkout.
+# `core.autocrlf=true` on this machine would otherwise corrupt bash scripts.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries are never normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
