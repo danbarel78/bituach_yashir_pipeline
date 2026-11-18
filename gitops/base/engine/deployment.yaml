@@ -1,0 +1,119 @@
+# Base Deployment for the engine service.
+#
+# Base is environment-agnostic on purpose: no namespace, no replicas, no
+# resources, no image tag, no ENVIRONMENT value. Those are overlay concerns and
+# live in gitops/overlays/<env>. Everything that must be identical everywhere -
+# probes, security context, rolling-update strategy, ports - is here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: engine
+  labels:
+    app.kubernetes.io/name: engine
+    app.kubernetes.io/part-of: bituach-yashir
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    # maxUnavailable 0 + maxSurge 1: capacity never drops below the desired
+    # count during a rollout. Declared strategy per handoff.md §6.
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: engine
+        app.kubernetes.io/part-of: bituach-yashir
+        app.kubernetes.io/component: backend
+    spec:
+      # Identity created by Terraform (modules/rbac), with no API permissions.
+      serviceAccountName: bituach-app
+      automountServiceAccountToken: false
+
+      securityContext:
+        # The image already runs as the unprivileged "app" user; this asserts it
+        # rather than pinning a UID that could drift from the Dockerfile.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: engine
+          # Tag is set by the overlay (newTag or newDigest). Never "latest".
+          image: ghcr.io/danbarel78/bituach-yashir-engine
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          # ENVIRONMENT arrives from the per-overlay ConfigMap; the downstream
+          # URLs are ClusterIP Service DNS names, stable across environments.
+          envFrom:
+            - configMapRef:
+                name: bituach-env
+          env:
+            - name: SERVICE_NAME
+              value: engine
+            - name: DATA_SERVICE_URL
+              value: http://data:8000
+            - name: INGEST_SERVICE_URL
+              value: http://ingest:8000
+
+          # Overlay sets the real requests/limits. These values only apply if an
+          # overlay forgets - the LimitRange in Terraform is the real guard.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Startup probe gives a slow first boot up to 60s before liveness
+          # starts counting, avoiding restart loops on a cold node.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # Readiness calls /readyz, which also checks the internal dependencies.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        # readOnlyRootFilesystem needs a writable scratch space for uvicorn.
+        - name: tmp
+          emptyDir: {}

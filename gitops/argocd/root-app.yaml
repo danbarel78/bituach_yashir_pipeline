@@ -1,0 +1,36 @@
+# App-of-apps root.
+#
+# One Application that owns the three environment Applications. Applying this
+# single file is the entire bootstrap for GitOps: Argo CD then discovers
+# gitops/argocd/apps/*.yaml and creates dev/staging/prod itself.
+#
+# Applied by the operator (or scripts/bootstrap.sh in a later phase):
+#   kubectl apply -f gitops/argocd/root-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bituach-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/danbarel78/bituach_yashir_pipeline.git
+    # The integration branch carries the desired state for all environments.
+    targetRevision: develop
+    path: gitops/argocd/apps
+    directory:
+      recurse: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true

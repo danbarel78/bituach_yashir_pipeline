@@ -1,0 +1,35 @@
+# Production environment Application.
+#
+# Deliberately NO automated sync block: prod is applied only when a human runs
+# `argocd app sync bituach-prod` (or clicks Sync). That is the manual-approval
+# gate from handoff.md §10, and the reason prod can never be changed by a merge
+# alone.
+#
+# In the full GitFlow this tracks main / a vX.Y.Z tag; for Phase 3 it tracks
+# develop so the POC can demonstrate all three environments from one commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bituach-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: prod
+    app.kubernetes.io/part-of: bituach-yashir
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/danbarel78/bituach_yashir_pipeline.git
+    targetRevision: develop
+    path: gitops/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bituach-prod
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
