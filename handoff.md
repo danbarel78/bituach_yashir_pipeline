@@ -13,7 +13,7 @@
 - Sections 1–16 are the **approved baseline**. Changing them requires an explicit decision from the user.
 - Section 17 lists **open items**; Section 18 is the **milestone log** (append-only, newest at the bottom).
 - Section 19 records the **environment as observed**, so assumptions about the machine are not re-guessed.
-- This file currently lives in the plan directory (`C:\Users\dbarel\.opencode\plan\handoff.md`) because the session is in Plan mode. It is copied to the repository root as `handoff.md` in the first build commit.
+- This file lives at the repository root and is committed (first build commit, 2026-11-18).
 
 ---
 
@@ -346,6 +346,8 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 |---|---|---|---|
 | 2026-11-17 | Scope confirmed | Part 1 only, T0 scope, GitFlow, public repo, no `gh`, `base_version.json` design approved | P0 scaffold |
 | 2026-11-18 | Handoff relocated + open items closed | `handoff.md` moved to repo root; English-only docs; both 15-min proofs kept; Plan mode exited | P1 services |
+| 2026-11-18 | **P0 scaffold complete** | Commit `433f9ac` on `main`: `.gitattributes` (LF enforcement), `.gitignore`, `base_version.json` (initial 0.0.0, relocated from stray `.opencode/skills/` location), `Makefile`, `ci/scripts/version.py`, `scripts/release.sh` (exec bit set); `develop` branched | P1 verify |
+| 2026-11-18 | **P1 services verified** | `feature/p1-services` merged to `develop` (`e90ef9b`); fixed `fix/data-quality-gates` merge (`c16ef99`): duplicate `[tool.pyright]` keys in data `pyproject.toml`, undefined `exc` in data `errors.py`, missing `ConfigDict` import in data schemas, magic numbers in data tests; all gates green — ruff ✅ mypy ✅ pytest: engine 95.5%, data 88.5%, ingest 88.5%; all three `/` endpoints answered HTTP 200 over real uvicorn runs | P2 cluster/platform |
 
 ---
 
@@ -360,7 +362,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd`, `vault`, `trivy`, `gh`, `uv` (uv installed in P1) |
 | Git identity | `Daniel Barel <dbarel@gmail.com>` |
 | Git config | `core.autocrlf=true`, `init.defaultBranch=master` |
-| Remote | `origin` exists, **empty** (no branches), local `main` has no commits |
+| Remote | `origin` exists, **empty** (no branches); local `main` has 1 commit, `develop` 3 (as of 2026-11-18); first push still pending |
 | Python note | `python` resolves to msys64 3.12.7; `py -3.11` also available |
 | Skills present | `python-standards` (Tier-1), `python-craft` (advisory), `python-review` (combined), `backend-Standards` (FastAPI extension), `architecture-ux-generate-flow` |
 
@@ -368,4 +370,6 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 
 ## 20. Next action
 
-**P1 — generate the three services** against the `backend-Standards` FastAPI extension plus `python-standards` Tier-1 policy (uv, `uv.lock`, src layout, ruff/mypy/pyright strict, pre-commit, coverage 80%). P0 scaffolding (`.gitattributes`, `base_version.json`, `version.py`, `release.sh`, `main`/`develop` branches) follows immediately after so the version tooling matches the service layout.
+**P2 — cluster verify + platform install** (per §14): verify Docker Desktop k8s context and metrics, install ingress-nginx + TLS, ArgoCD, Vault, ESO into the cluster; write `scripts/bootstrap.sh`, `verify.sh`, `load-images.sh`. Checkpoint: ArgoCD UI reachable, Vault unsealed, ESO healthy. Tooling runs in WSL2 `Ubuntu` (§2).
+
+Note: §14's P0 checkpoint text said `0.1.0-dev.N` on develop, but the approved §6 rule (develop = patch+1 from base) yields `0.0.1-dev.N` from the initial 0.0.0 base — §6 was followed. After the first `release.sh` run (base → X.Y.Z), develop builds match the §6 table exactly.
