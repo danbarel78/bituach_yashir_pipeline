@@ -22,6 +22,7 @@ Argo CD applications **Synced/Healthy**.
 | P2 | Local cluster, ingress + TLS, Argo CD, Vault, ESO, scripts | ✅ done |
 | P3 | Terraform (quota/RBAC/netpol/HPA), kustomize overlays, app-of-apps | ✅ done |
 | — | Endpoint fixes (`/items`, `/ingest`) + per-service hostnames | ✅ done |
+| — | Images published to public GHCR + overlays pinned by digest | ✅ done |
 | P4 | Jenkins CI/CD pipeline | ⛔ not started |
 | P5 | Vault → ESO → Pod secret path end-to-end | ⛔ components installed, path not wired |
 | P6 | README, decisions doc, versioning docs, `v1.0.0` tag, CHANGELOG | ⛔ not started |
@@ -101,7 +102,7 @@ prod's "Sync" button, which is the approval gate.
 |---|---|---|
 | Real local cluster, working POC, not mocked | Docker Desktop Kubernetes, 3 namespaces, live URLs | ✅ |
 | Jenkins: build, tests, SAST/dependency + image scan, GitOps deploy | `ci/Jenkinsfile`, `ci/docker/jenkins/` | ⛔ **not built** (P4) |
-| Version management: GitFlow, SemVer, tagging policy, changelog, rollout | `ci/scripts/version.py`, `scripts/release.sh`, `base_version.json`, `strategy.rollingUpdate` | ⚠️ engine built; docs, tags, CHANGELOG missing (P6) |
+| Version management: GitFlow, SemVer, tagging policy, changelog, rollout | `ci/scripts/version.py`, `scripts/release.sh`, `base_version.json`, `strategy.rollingUpdate`, digest-pinned overlays | ⚠️ SemVer engine + immutable digest pins done; docs, tags, CHANGELOG missing (P6) |
 | Vault + ESO, no secrets in manifests/code/logs, CI-time + runtime | Vault and ESO installed; `ExternalSecret`/`ClusterSecretStore` not created | ⚠️ **components only** (P5) |
 | Dev/staging/prod + justification + Terraform (quota, limits, RBAC, SA, netpol, HPA, replicas) | `terraform/modules/*`, `terraform/envs/*` | ✅ code written and applied; written justification still to do |
 | Internal vs external channels + SLA/monitoring/alerting differences | Internal ClusterIP + Ingress/TLS implemented; monitoring stack designed only | ⚠️ implementation ✅, documentation ⛔ |
@@ -455,10 +456,23 @@ kubectl -n bituach-prod logs deploy/engine --tail=20
 kubectl -n bituach-prod logs deploy/engine --tail=50 | Select-String '"level":"ERROR"'
 ```
 
-### 7.7 Rebuild and redeploy an image (local registry fallback)
+### 7.7 Rebuild and redeploy an image
 
-The overlays currently pin `:local` because GHCR push needs a PAT (P4). The
-local path is:
+The overlays pin **digests** (`ghcr.io/...@sha256:…`), so a rebuilt image is not
+picked up by re-tagging. The intended path is: build → push a new immutable tag
+to GHCR → pin the new digest in the overlay → commit/push → Argo CD syncs.
+
+```powershell
+docker build --build-arg APP_VERSION=0.0.1-dev.0 --build-arg GIT_SHA=$(git rev-parse --short HEAD) `
+  -t ghcr.io/danbarel78/bituach-yashir-engine:0.0.1-dev.0-<sha> services/engine
+docker push ghcr.io/danbarel78/bituach-yashir-engine:0.0.1-dev.0-<sha>
+docker buildx imagetools inspect ghcr.io/danbarel78/bituach-yashir-engine:0.0.1-dev.0-<sha>
+# put the new sha256 digest in gitops/overlays/dev/kustomization.yaml, commit, push
+```
+
+Local fallback (no registry round-trip, useful while iterating): build the
+`:local` tag, import it into the node, and temporarily override the overlay —
+but remember the committed state must stay a digest for reproducibility.
 
 ```powershell
 docker build -t ghcr.io/danbarel78/bituach-yashir-engine:local services/engine
@@ -521,11 +535,9 @@ Ordered by importance to the assignment:
    `docs/decisions.md` (one page) are required deliverables and **do not exist
    yet**. Same for `docs/versioning.md`, `git-workflow.md`, `environment-topology.md`,
    `observability-design.md`, `secrets.md`, `runbook.md`, `architecture.md`.
-4. **Digest pinning** — overlays still say `newTag: local`; §6 requires
-   `image@sha256:…`.
-5. **Promotion wiring** — all apps track `develop`; staging should track the
+4. **Promotion wiring** — all apps track `develop`; staging should track the
    release branch, prod the tag.
-6. **Release artifacts** — no `CHANGELOG.md`, no `v1.0.0` tag, no real release
+5. **Release artifacts** — no `CHANGELOG.md`, no `v1.0.0` tag, no real release
    run of `scripts/release.sh`.
 
 Items 1–3 are the ones a reviewer will notice first.
