@@ -1,11 +1,13 @@
 """Error contract tests: every failure must return the same JSON shape."""
 
+from http import HTTPStatus
+
 from fastapi.testclient import TestClient
 
 
 def test_unknown_path_returns_error_contract(client: TestClient) -> None:
     response = client.get("/does-not-exist")
-    assert response.status_code == 404
+    assert response.status_code == HTTPStatus.NOT_FOUND
     body = response.json()
     assert body["error"] == "http_404"
     assert body["detail"] == "Not Found"
@@ -14,7 +16,7 @@ def test_unknown_path_returns_error_contract(client: TestClient) -> None:
 
 def test_wrong_method_returns_error_contract(client: TestClient) -> None:
     response = client.post("/")
-    assert response.status_code == 405
+    assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
     assert response.json()["error"] == "http_405"
 
 

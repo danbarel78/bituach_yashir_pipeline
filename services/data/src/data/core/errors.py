@@ -48,7 +48,7 @@ def install_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=422, content=body.model_dump())
 
     @app.exception_handler(Exception)
-    async def handle_unexpected_error(request: Request, _exc: Exception) -> JSONResponse:
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         logger.exception(
             "unhandled_exception",
             extra={

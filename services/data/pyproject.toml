@@ -73,12 +73,6 @@ extraPaths = ["src"]
 # Tests are exercised by pytest and type-checked via mypy on src; the
 # TestClient surface of the installed Starlette version is not fully typed.
 exclude = [".venv", "build", "dist", "tests", "**/__pycache__"]
-venvPath = "."
-venv = ".venv"
-extraPaths = ["src"]
-# Tests are exercised by pytest and type-checked via mypy on src; the
-# TestClient surface of the installed Starlette version is not fully typed.
-exclude = [".venv", "build", "dist", "tests", "**/__pycache__"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
