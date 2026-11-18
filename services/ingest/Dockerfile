@@ -26,7 +26,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     SERVICE_NAME=ingest
 
-RUN groupadd --system app && useradd --system --gid app --home-dir /app --shell /usr/sbin/nologin app
+# Fixed numeric UID/GID so securityContext.runAsNonRoot can be verified by
+# the kubelet (a named USER cannot be checked and the pod is rejected).
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid 10001 \
+       --home-dir /app --shell /usr/sbin/nologin app
 
 WORKDIR /app
 
@@ -37,7 +41,7 @@ ARG GIT_SHA=unknown
 ENV APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA}
 
-USER app
+USER 10001:10001
 
 EXPOSE 8000
 
