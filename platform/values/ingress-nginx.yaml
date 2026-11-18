@@ -1,0 +1,48 @@
+# ingress-nginx - the single external entry point for every environment.
+#
+# Docker Desktop implements Service type=LoadBalancer by publishing the ports on
+# the host, so http://localhost and https://localhost reach this controller.
+# TLS is terminated here; backend pods always speak plain HTTP over ClusterIP.
+
+controller:
+  replicaCount: 1
+
+  service:
+    type: LoadBalancer
+    # Docker Desktop reserves 80/443 for the host; verified free before install.
+    ports:
+      http: 80
+      https: 443
+
+  # Small footprint: this is a single-node POC, not a production edge tier.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 90Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Reject anything older than TLS 1.2 and forward the original client headers
+  # so the access log and any future rate limiting see real client IPs.
+  config:
+    ssl-protocols: "TLSv1.2 TLSv1.3"
+    use-forwarded-headers: "true"
+    server-tokens: "false"
+
+  metrics:
+    enabled: true
+
+  admissionWebhooks:
+    enabled: true
+    patch:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+
+defaultBackend:
+  enabled: false
