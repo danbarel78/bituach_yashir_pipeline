@@ -125,7 +125,7 @@ Single Docker Desktop cluster, three namespaces, one ArgoCD, one Vault, one ingr
 | `data` | 8000 | `/` → `{"service":"data"}`, `/version`, `/healthz`, `/readyz`, `/items` | Serves static/derived sample data |
 | `ingest` | 8000 | `/` → `{"service":"ingest"}`, `/version`, `/healthz`, `/readyz`, `/ingest` | Accepts a payload and acknowledges it |
 
-Shared conventions: Python 3.12, FastAPI, uvicorn, `pytest` + `httpx` for tests, `ruff` for lint, `requirements.txt` pinned, non-root UID, read-only root filesystem where practical, structured JSON logging with no secret values, `APP_VERSION`/`GIT_SHA` build args baked in.
+Shared conventions: Python 3.12, FastAPI, uvicorn, `uv` with `pyproject.toml` + committed `uv.lock` (no `requirements.txt`), `pytest` + `httpx` for tests, `ruff` + `mypy --strict` + `pyright` for quality gates, coverage floor 80%, non-root UID, read-only root filesystem where practical, structured JSON logging with no secret values, `APP_VERSION`/`GIT_SHA` build args baked in.
 
 ---
 
@@ -244,7 +244,8 @@ Branch behaviour: `feature/*` runs through image scan and stops; `develop` pushe
 
 ## 12. Observability design (documented only)
 
-- **Stack:** kube-prometheus-stack (Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter) with etcd/scheduler/controller-manager/proxy scrape targets disabled — Docker Desktop's control plane is not scrapeable and default alerts would misfire. Metrics-server ships with Docker Desktop and backs HPA.
+- **Stack:** kube-prometheus-stack (Prometheus, Grafana, Alertmanager, kube-state-metrics, node-exporter) with etcd/scheduler/controller-manager/proxy scrape targets disabled — Docker Desktop's control plane is not scrapeable and default alerts would misfire.
+- **metrics-server is NOT shipped with Docker Desktop** (verified 2026-11-18: the `v1beta1.metrics.k8s.io` APIService was absent). HPA has no backend without it, so `scripts/bootstrap.sh` installs `metrics-server` 3.14.0 into `kube-system` with `--kubelet-insecure-tls`, and `scripts/verify.sh` asserts the API is `Available`.
 - **Per-service signals:** `/metrics` via `prometheus-fastapi-instrumentator`; ServiceMonitor per service; panels for RPS, p95 latency, 5xx ratio, restarts, HPA replicas.
 - **Alerts:** error-rate SLO burn, p95 latency, restart loop, ExternalSecret not synced, ArgoCD `OutOfSync`/`Degraded`, certificate expiry, HPA at max.
 - **Routing:** dev → none; staging → Slack/email warning; prod → paging (PagerDuty/on-call) with escalation.
@@ -329,7 +330,8 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 4 | Repository `danbarel78/bituach_yashir_pipeline` public | User | confirmed public; observed empty (no branches) |
 | 5 | Switch session from Plan mode to build agent | User | **RESOLVED 2026-11-18 — build mode active** |
 | 6 | Parts 2 and 3 text | User | promised after Part 1 |
-| 7 | `uv` dependency manager (Tier-1 policy requirement) | Agent | installed during P1; `uv.lock` committed per service |
+| 7 | `uv` dependency manager (Tier-1 policy requirement) | Agent | **RESOLVED** — installed in P1; `uv.lock` committed per service |
+| 8 | `kubectl` + `helm` in WSL2 `Ubuntu` (Q1 requires Linux tooling) | Agent | **RESOLVED 2026-11-18** — kubectl 1.37.2 + helm 4.3.2 in `~/.local/bin`; kubeconfig copied from Windows |
 
 ---
 
@@ -348,6 +350,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-18 | Handoff relocated + open items closed | `handoff.md` moved to repo root; English-only docs; both 15-min proofs kept; Plan mode exited | P1 services |
 | 2026-11-18 | **P0 scaffold complete** | Commit `433f9ac` on `main`: `.gitattributes` (LF enforcement), `.gitignore`, `base_version.json` (initial 0.0.0, relocated from stray `.opencode/skills/` location), `Makefile`, `ci/scripts/version.py`, `scripts/release.sh` (exec bit set); `develop` branched | P1 verify |
 | 2026-11-18 | **P1 services verified** | `feature/p1-services` merged to `develop` (`e90ef9b`); fixed `fix/data-quality-gates` merge (`c16ef99`): duplicate `[tool.pyright]` keys in data `pyproject.toml`, undefined `exc` in data `errors.py`, missing `ConfigDict` import in data schemas, magic numbers in data tests; all gates green — ruff ✅ mypy ✅ pytest: engine 95.5%, data 88.5%, ingest 88.5%; all three `/` endpoints answered HTTP 200 over real uvicorn runs | P2 cluster/platform |
+| 2026-11-18 | **P2 platform layer live** | `feature/p2-platform` merged to `develop`. Docker Desktop was **not running** at session start (restarted manually). Installed in WSL `Ubuntu`: kubectl 1.37.2 + helm 4.3.2 user-space (`~/.local/bin`, no sudo), kubeconfig wired. Platform: metrics-server 3.14.0, ingress-nginx 4.15.1 (LoadBalancer `172.18.0.5`, host 80/443), Argo CD 10.18.0 (v3.6.1), Vault 0.34.1 dev mode (2.0.4), ESO 2.15.0; self-signed TLS for 6 hosts generated at bootstrap (never committed). `scripts/verify.sh`: **21/21 checks pass** — Argo CD and Vault reachable over HTTPS, Vault initialized+unsealed, ESO 3 deployments ready, both ESO CRDs present | P3 Terraform + GitOps |
 
 ---
 
@@ -357,9 +360,10 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 |---|---|
 | OS / shell | Windows 10/11, PowerShell; WSL2 available (`Ubuntu` distro, `docker-desktop` default) |
 | Working dir | `C:\Users\dbarel\OneDrive\Documents\MyProjects\bituach_yashir_demo\bituach_yashir_pipeline` |
-| Docker | Docker Desktop installed; daemon **running** (29.8.2); k8s context `docker-desktop` configured and enabled |
-| Present | `docker`, `kubectl`, `helm`, `terraform`, `git`, `python` 3.12.7 (+ py 3.11), `java` 21 |
-| Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd`, `vault`, `trivy`, `gh`, `uv` (uv installed in P1) |
+| Docker | Docker Desktop installed at `%LOCALAPPDATA%\Programs\DockerDesktop`; **not running at session start** on 2026-11-18 (started manually); engine 29.8.2; k8s v1.36.1, node `desktop-control-plane` |
+| Present | `docker`, `kubectl` (1.37.2), `helm` (4.3.x), `terraform`, `git`, `python` 3.12.7 (+ py 3.11), `java` 21 |
+| WSL2 `Ubuntu` | kubectl 1.37.2 + helm 4.3.2 installed user-space in `~/.local/bin` (no sudo needed — `sudo` requires an interactive password); kubeconfig copied from Windows, API server reachable on `127.0.0.1` (mirrored networking) |
+| Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd` CLI, `vault` CLI, `trivy`, `gh` |
 | Git identity | `Daniel Barel <dbarel@gmail.com>` |
 | Git config | `core.autocrlf=true`, `init.defaultBranch=master` |
 | Remote | `origin` exists, **empty** (no branches); local `main` has 1 commit, `develop` 3 (as of 2026-11-18); first push still pending |
@@ -370,6 +374,8 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 
 ## 20. Next action
 
-**P2 — cluster verify + platform install** (per §14): verify Docker Desktop k8s context and metrics, install ingress-nginx + TLS, ArgoCD, Vault, ESO into the cluster; write `scripts/bootstrap.sh`, `verify.sh`, `load-images.sh`. Checkpoint: ArgoCD UI reachable, Vault unsealed, ESO healthy. Tooling runs in WSL2 `Ubuntu` (§2).
+**P3 — Terraform + Kustomize + app-of-apps** (per §14): Terraform modules (`namespace`, `rbac`, `networkpolicy`, `resources`, `autoscaling`) and `envs/{dev,staging,prod}` with the §4 values; kustomize `base/` + `overlays/{dev,staging,prod}` with digest-pinned images and `strategy.rollingUpdate`; Argo CD app-of-apps root + three child apps. Checkpoint: dev pods Running via Argo CD.
+
+Open at P3 start: the three GHCR images do not exist yet (no P4 push), so overlays need either locally built `:local` images imported via `scripts/load-images.sh`, or the P4 push must happen first. The offline path is already implemented, so P3 can proceed without registry access.
 
 Note: §14's P0 checkpoint text said `0.1.0-dev.N` on develop, but the approved §6 rule (develop = patch+1 from base) yields `0.0.1-dev.N` from the initial 0.0.0 base — §6 was followed. After the first `release.sh` run (base → X.Y.Z), develop builds match the §6 table exactly.
