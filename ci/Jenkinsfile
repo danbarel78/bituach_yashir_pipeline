@@ -21,6 +21,11 @@ pipeline {
     timeout(time: 45, unit: 'MINUTES')
   }
 
+  // Per-branch polling: the webhook-free equivalent of "build on push" for a
+  // laptop POC. git ls-remote does not consume the GitHub API quota; the
+  // multibranch folder itself re-indexes every 5 minutes (see the job bootstrap).
+  triggers { pollSCM('* * * * *') }
+
   environment {
     REGISTRY         = 'ghcr.io/danbarel78'
     IMAGE_PREFIX     = 'bituach-yashir'
