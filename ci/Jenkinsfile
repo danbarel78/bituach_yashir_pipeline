@@ -244,14 +244,22 @@ pipeline {
           steps {
             sh '''
               set -euo pipefail
+              # "Synced" can describe the revision that was already deployed
+              # before our push. Wait for the exact commit we just pushed.
+              target="$(cat gitops-revision.txt)"
+              echo "waiting for Argo CD to reconcile ${target}"
               for i in $(seq 1 40); do
+                revision="$(kubectl -n argocd get application "bituach-$TARGET_ENV" \
+                  -o jsonpath='{.status.sync.revision}')"
                 status="$(kubectl -n argocd get application "bituach-$TARGET_ENV" \
                   -o jsonpath='{.status.sync.status}/{.status.health.status}')"
-                echo "argo: $status"
-                [ "$status" = "Synced/Healthy" ] && exit 0
+                echo "argo: revision=${revision} status=${status}"
+                if [ "$revision" = "$target" ] && [ "$status" = "Synced/Healthy" ]; then
+                  exit 0
+                fi
                 sleep 5
               done
-              echo "timed out waiting for bituach-$TARGET_ENV to become Synced/Healthy" >&2
+              echo "timed out waiting for bituach-$TARGET_ENV at ${target}" >&2
               exit 1
             '''
           }
@@ -262,7 +270,9 @@ pipeline {
           steps {
             sh '''
               set -euo pipefail
-              ip="$(getent hosts host.docker.internal | awk '{print $1}' | head -1)"
+              # ahostsv4: "getent hosts" can return the IPv6 gateway first, and
+              # curl --resolve needs the address family the ingress listens on.
+              ip="$(getent ahostsv4 host.docker.internal | awk '{print $1}' | head -1)"
               SMOKE_RESOLVE_IP="${ip:-127.0.0.1}" ./scripts/smoke-test.sh --env "$TARGET_ENV"
             '''
           }

@@ -53,6 +53,7 @@ fi
 
 if git diff --cached --quiet; then
   echo "==> overlay already pinned; nothing to commit"
+  git rev-parse HEAD > gitops-revision.txt
   exit 0
 fi
 
@@ -65,6 +66,7 @@ for attempt in 1 2 3; do
   echo "==> push attempt ${attempt} -> ${TARGET_BRANCH}"
   if git push -q "$remote" "HEAD:${TARGET_BRANCH}"; then
     echo "==> pushed to ${TARGET_BRANCH}"
+    git rev-parse HEAD > gitops-revision.txt
     exit 0
   fi
   echo "==> push rejected; rebasing on origin/${TARGET_BRANCH}"
