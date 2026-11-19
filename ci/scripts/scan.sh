@@ -31,7 +31,7 @@ case "$command" in
     for service in "${SERVICES[@]}"; do
       echo "==> pip-audit: ${service}"
       ( cd "services/${service}" \
-        && uv export --frozen --no-dev --format requirements-txt \
+        && uv export --frozen --no-dev --no-emit-project --format requirements-txt \
              -o "${REPORTS}/requirements-${service}.txt" >/dev/null \
         && uv run --with pip-audit pip-audit -r "${REPORTS}/requirements-${service}.txt" )
     done
