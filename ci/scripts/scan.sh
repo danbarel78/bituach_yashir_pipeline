@@ -40,11 +40,15 @@ case "$command" in
   image)
     ref="${2:?scan.sh image needs an image reference}"
     name="$(echo "$ref" | sed 's#.*/##; s/:.*//')"
-    echo "==> trivy: ${ref}"
+    # Per-build cache: two branches building at once would otherwise fight over
+    # Trivy's fs cache lock ("cache may be in use by another process").
+    cache_dir="${TRIVY_CACHE_DIR:-/tmp/trivy-cache-${BUILD_NUMBER:-$$}}"
+    echo "==> trivy: ${ref} (cache: ${cache_dir})"
     # --ignore-unfixed: fail only on vulnerabilities that have a fix available.
     # Unfixable base-image CVEs stay in the archived report instead of blocking
     # every build forever; the JSON artifact keeps them visible for triage.
-    trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+    trivy image --quiet --cache-dir "$cache_dir" \
+      --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
       --format json --output "${REPORTS}/trivy-${name}.json" "$ref"
     ;;
 
