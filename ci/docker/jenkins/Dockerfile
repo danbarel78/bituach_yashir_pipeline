@@ -10,6 +10,7 @@ FROM jenkins/jenkins:lts-jdk21
 USER root
 
 ARG DOCKER_CLI_VERSION=27.5.1
+ARG BUILDX_VERSION=0.39.0
 ARG KUBECTL_VERSION=1.36.1
 ARG TRIVY_VERSION=0.76.2
 ARG UV_VERSION=0.13.9
@@ -25,6 +26,14 @@ RUN apt-get update \
 RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
       | tar -xz --strip-components=1 -C /usr/local/bin docker/docker \
     && docker --version
+
+# buildx: the service Dockerfiles use BuildKit cache mounts, and the Docker CLI
+# refuses BuildKit when the plugin is missing.
+RUN mkdir -p /usr/local/lib/docker/cli-plugins \
+    && curl -fsSLo /usr/local/lib/docker/cli-plugins/docker-buildx \
+        "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-amd64" \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx \
+    && docker buildx version
 
 # kubectl, used to wait for Argo CD and to render kustomize overlays.
 RUN curl -fsSLo /usr/local/bin/kubectl \

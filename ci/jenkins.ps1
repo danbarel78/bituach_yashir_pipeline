@@ -78,6 +78,7 @@ switch ($Action) {
       -p 8080:8080 `
       -v "${Volume}:/var/jenkins_home" `
       -v /var/run/docker.sock:/var/run/docker.sock `
+      --group-add 0 `
       -v "${kubeconfig}:/var/jenkins_home/.kube/config:ro" `
       -e "JENKINS_ADMIN_PASSWORD=$AdminPassword" `
       --restart unless-stopped `
