@@ -42,7 +42,7 @@ Source: Home Assignment — Team Lead, DevOps & DevEx. The assignment has three 
 | Q1 | Docker Desktop Kubernetes, single node, single cluster, 3 namespaces (`bituach-dev`, `bituach-staging`, `bituach-prod`) | kind / minikube / k3d; separate clusters per environment | Docker Desktop k8s is already enabled on the machine; one cluster is enough to demonstrate namespace-level isolation, RBAC and quotas; separate clusters documented as the production recommendation |
 | Q1 | Tooling runs in WSL2 `Ubuntu` | PowerShell / Git Bash | kubectl, helm, argocd, trivy, vault behave predictably on Linux; container builds and scripts are bash |
 | Q1 | Registry `ghcr.io/danbarel78/bituach-yashir-{engine,data,ingest}`, **public** | Private GHCR; Docker Hub | Public packages need no `imagePullSecret` in manifests — keeps the secret story clean; private registry + `imagePullSecret` via ESO documented as the production variant |
-| Q1 | Immutable tags `vX.Y.Z` and `vX.Y.Z-<sha>`; overlays pin **digests**; `latest` forbidden | Mutable `latest` / branch-name tags | Task explicitly asks for an immutable-tag policy |
+| Q1 | Immutable image tags `X.Y.Z` (Git tags `vX.Y.Z`); overlays pin **digests**; `latest` forbidden | Mutable `latest` / branch-name tags | Task explicitly asks for an immutable-tag policy |
 | Q1 | Offline fallback `scripts/load-images.sh` (`docker save` → `ctr -n k8s.io images import`) | Rely solely on registry pulls | Docker Desktop may not resolve in-cluster registry names reliably |
 | Q1 | GitHub Packages retention: keep last 3 tags per service | Unlimited retention | 500 MB free quota |
 | Q2 | **Part 1 only**; Parts 2–3 supplied later | Infer and draft Parts 2–3 | Avoids unrequested work |
@@ -86,6 +86,17 @@ Two checks are kept **implemented** despite being outside the strict letter, bec
 ### Documented only (designed, not deployed)
 
 Prometheus / Grafana / Alertmanager stack and dashboards · alert rules and routing · SLO/SLA matrix per environment · Argo Rollouts canary and blue-green with migration path · PodDisruptionBudgets and anti-affinity · multi-cluster production topology · Vault production hardening (Raft, auto-unseal, k8s auth) · human RBAC matrix · private GHCR + `imagePullSecret` via ESO · Jenkins/CI observability · cost and quota management.
+
+> **Status correction (2026-11-19).** The table above is the **target end
+> state**, not a verified checklist. Current gaps, confirmed by reading the
+> code: no `ExternalSecret`/`ClusterSecretStore`/`secretKeyRef` (P5), no
+> gitleaks stage, no rotation demo, no tag-retention stage, no
+> `progressDeadlineSeconds`, and no `README.md`, `docs/decisions.md`,
+> `docs/architecture.md`, `docs/observability-design.md` or `docs/runbook.md`.
+> The reliable status is the milestone log (§18) plus
+> `docs/requirements-coverage.md`. The design documents that do exist are
+> `docs/versioning.md`, `docs/secrets.md`, `docs/environment-topology.md` and
+> `docs/git-workflow.md`.
 
 ---
 
@@ -149,13 +160,38 @@ Holds the **last released** version. Only a human or `scripts/release.sh` edits 
 
 | Branch / event | Computed version | `base_version.json` after | Registry tags | Deploys to |
 |---|---|---|---|---|
-| `feature/*` | `X.Y.Z-<branch>.N+<sha>` | unchanged | not pushed (build + test only) | nothing |
+| `feature/*`, `fix/*`, `bugfix/*`, `chore/*`, `docs/*`, `refactor/*`, `test/*`, `dependabot/*` | `X.Y.(Z+1)-<slug>.N+<sha>` | unchanged | not pushed (build + test only) | nothing |
 | push `develop` | `X.Y.(Z+1)-dev.N+<sha>` | unchanged | `X.Y.(Z+1)-dev.N-<sha>` | `dev` |
-| `release/X.Y.0` | `X.Y.0-rc.N+<sha>` | unchanged | `X.Y.0-rc.N-<sha>` | `staging` |
-| merge to `main` + tag `vX.Y.Z` | `X.Y.Z` (final) | set to `X.Y.Z` | `vX.Y.Z`, `vX.Y.Z-<sha>` (digest pinned) | `prod` (manual approval) |
-| `hotfix/X.Y.(Z+1)` from tag | `X.Y.(Z+1)-hotfix.N+<sha>` → final `X.Y.(Z+1)` | set on merge | as above | staging → prod |
+| `release/X.Y.Z` | `X.Y.Z-rc.N+<sha>` | unchanged | `X.Y.Z-rc.N-<sha>` | `staging` |
+| `hotfix/X.Y.Z` | `X.Y.Z-hotfix.N+<sha>` | unchanged | `X.Y.Z-hotfix.N-<sha>` | `staging` |
+| `main` at tag `vX.Y.Z` | `X.Y.Z` (final) | `release.sh` sets it to `X.Y.Z` | `X.Y.Z` (image tag; Git tag keeps the `v`) | `prod` (manual approval) |
+| detached HEAD | `0.0.0-local` | unchanged | not pushed | nothing |
+| any other branch | refused (exit 1) | unchanged | not pushed | nothing |
 
-`N` = Jenkins `BUILD_NUMBER`; `<sha>` = 7-char commit SHA; local builds default to `0.0.0-local`.
+`N` = Jenkins `BUILD_NUMBER`; `<sha>` = 7-char commit SHA; local builds default
+to `0.0.0-local`. Feature-like branches use the **next** patch so they sort
+above the last release.
+
+**Who bumps what.** The numeric core changes only in `scripts/release.sh`, run
+on `main`: it bumps `base_version.json`, regenerates `CHANGELOG.md`, commits,
+and creates the annotated `vX.Y.Z` tag on that commit. The bump argument must
+match the release branch (`release/1.0.0` → `major` from 0.0.0; `release/1.1.0`
+→ `minor`; `release/1.0.1` → `patch`).
+
+**How the final build triggers.** Jenkins discovers branches, not tags. The
+release build is the `main` **branch** build at the tagged commit; `main` and the
+tag are pushed together (`git push origin main --follow-tags`). `version.py`
+then proves the release with `git describe --exact-match --tags HEAD`. The CI
+build pushes one more untagged `[skip ci]` commit to `main` that pins the prod
+digests, so the tag marks the source release while the overlay commit marks the
+deployed bytes.
+
+**Back-merge immediately.** After the tag exists, a `develop` build that still
+has the old base version computes a version below the tag (for example
+`0.0.1-dev.N` < `v1.0.0`) and fails the monotonicity guard. Merging `main` back
+into `develop` brings the new `base_version.json` and the next build becomes
+`1.0.1-dev.N`. The full operator sequence is in `docs/git-workflow.md` §5 and
+§9.
 
 ### Guard rails (build fails, not warns)
 
@@ -169,7 +205,7 @@ Holds the **last released** version. Only a human or `scripts/release.sh` edits 
 
 - `scripts/release.sh` (no `gh`): bump `base_version.json` → regenerate `CHANGELOG.md` from Conventional Commits → commit → annotated tag → print the exact `git push` commands.
 - `CHANGELOG.md`: Keep-a-Changelog format, generated from Conventional Commits (`feat:`, `fix:`, `chore:`, `BREAKING CHANGE:`), grouped by version.
-- Rollout strategy: **RollingUpdate** as the declared strategy (`maxSurge: 1`, `maxUnavailable: 0`, progress deadline); Blue-Green and Canary documented as the production evolution with an Argo Rollouts migration path.
+- Rollout strategy: **RollingUpdate** as the declared strategy (`maxSurge: 1`, `maxUnavailable: 0`); Blue-Green and Canary documented as the production evolution with an Argo Rollouts migration path.
 
 ---
 
@@ -178,15 +214,18 @@ Holds the **last released** version. Only a human or `scripts/release.sh` edits 
 Documented in `docs/git-workflow.md` with copy-paste commands:
 
 1. `main` (protected, prod) and `develop` (integration) created in the first commit.
-2. `feature/<name>` → PR into `develop` → CI builds and tests, no registry push.
-3. `release/X.Y.0` cut from `develop` → CI pushes `rc` images → ArgoCD syncs `staging` → validation.
-4. Merge `release/*` into `main` → annotated tag `vX.Y.Z` → CI pushes final images → ArgoCD syncs `prod` after manual approval.
+2. `feature/<name>` (or `fix/<name>`) → PR into `develop` → CI builds and tests, no registry push.
+3. `release/X.Y.Z` cut from `develop` → CI pushes `rc` images → ArgoCD syncs `staging` → validation.
+4. Merge `release/*` into `main` → `release.sh` bumps and tags `vX.Y.Z` → CI pushes final images → ArgoCD updates `prod`, which waits for manual approval.
 5. Back-merge `main` → `develop`; delete the release branch.
-6. `hotfix/X.Y.(Z+1)` from the release tag → PR to `main` → tag → back-merge to `develop`.
+6. `hotfix/X.Y.Z` from the release tag → PR to `main` → `release.sh patch` → tag → back-merge to `develop`.
 7. PRs created through the GitHub web UI (no `gh`); branch protection configured manually in repository settings.
 8. Rollback = revert the GitOps overlay commit; ArgoCD re-syncs the previous digest.
 
-Conventional Commits, tag naming (`vX.Y.Z`, annotated), and the branch→version→tag→environment cheat sheet are all in that document.
+Conventional Commits, tag naming (`vX.Y.Z`, annotated), and the branch→version→tag→environment cheat sheet are all in that document. The complete
+copy-paste simulation from a `fix/` branch to a verified production deployment
+(including the Argo CD retargeting the POC currently requires) is
+`docs/git-workflow.md` §9.
 
 ---
 
@@ -214,31 +253,40 @@ Containerized controller (`ci/docker/jenkins/Dockerfile` with docker CLI, kubect
 
 | Stage | Detail | Gate |
 |---|---|---|
-| Checkout | full history + tags (`fetchTags`) | — |
-| Version | `version.py` computes version; prints branch/version | monotonicity |
-| Lint | `ruff check` | fail on error |
-| Test | `pytest` with coverage | fail on any failure |
-| SAST | `bandit -r services` | fail on HIGH |
-| Dependency scan | `pip-audit` per service | fail on HIGH/CRITICAL |
+| Preflight | `[skip ci]` guard + refuses `:latest`/`:local` in overlays | fail on violation |
+| Version | `git fetch --tags`, then `version.py` computes version; prints branch/version/target | SemVer + monotonicity |
+| Setup | `uv sync --frozen --extra dev` per service | — |
+| Lint | `ruff check` + `ruff format --check` | fail on error |
+| Types | `mypy` per service | fail on error |
+| Test | `pytest --cov` per service + the version-policy tests | coverage floor 80%, fail on any failure |
+| SAST | `bandit` per service | fail on HIGH |
+| Dependencies | `pip-audit` per service | fail on HIGH/CRITICAL |
 | Build | `docker build --build-arg APP_VERSION --build-arg GIT_SHA` | — |
-| Image scan | Trivy, report archived as artifact | fail on HIGH/CRITICAL |
-| Push | `docker login` with Jenkins credential → GHCR, immutable tags + digest | branch-gated |
-| GitOps update | `kustomize edit set image ...@<digest>` → commit to overlay | branch-gated |
-| Deploy | ArgoCD auto-sync per overlay; `prod` requires manual approval | — |
-| Verify | `scripts/smoke-test.sh` against the environment | fail on unhealthy |
-| Retention | prune GHCR tags beyond the last 3 per service | — |
+| Image scan | Trivy, JSON report archived | fail on fixable HIGH/CRITICAL |
+| Push | `docker login` with Jenkins credential → GHCR, immutable tag + digest | branch-gated |
+| GitOps | `pin_digests.py` (equivalent to `kustomize edit set image ...@<digest>`) → commit to the target branch | branch-gated |
+| Wait for Argo CD | waits for the exact pushed revision and `Synced/Healthy` | dev/staging only |
+| Smoke | `scripts/smoke-test.sh --env <env>` | dev/staging only |
+| Prod handoff | prints the approval URL; no automatic sync | `main` only |
 
-Branch behaviour: `feature/*` runs through image scan and stops; `develop` pushes and syncs `dev`; `release/*` pushes and syncs `staging`; `main`+tag pushes finals and syncs `prod`.
+No retention stage exists yet; GitHub Packages pruning is manual (a known gap).
+No gitleaks stage exists yet (see §3 status correction).
+
+Branch behaviour: `feature/*`, `fix/*` and the other pre-release branches run
+through image scan and stop; `develop` pushes and syncs `dev`; `release/*` and
+`hotfix/*` push and sync `staging`; a tagged `main` branch pushes finals and
+updates the `prod` overlay, which a human then syncs.
 
 ---
 
 ## 11. GitOps / ArgoCD design
 
 - App-of-apps: one root app → three child apps (one per environment) → each child renders `gitops/overlays/<env>`.
-- Sync policy: automated prune + self-heal for dev/staging; prod automated with manual sync (approval).
+- Sync policy: automated prune + self-heal for dev/staging; prod has **no** automated block, so every deployment needs a manual Sync.
 - Drift detection: UI/`argocd app diff`; self-heal demonstrated once.
-- Image promotion: digest pinning in overlays; commit message records version, digest and pipeline URL.
-- ArgoCD installed via Helm with values in `platform/argocd/values.yaml`; exposed at `https://argocd.localhost`.
+- Image promotion: digest pinning in overlays; the commit message is `chore(gitops): pin <version> [skip ci]` (it records the version, not the digest or a pipeline URL; the digest is in the diff).
+- **Promotion wiring gap:** all three child Applications currently track `develop`. A real promotion needs dev→`develop`, staging→the active `release/*`/`hotfix/*` branch, prod→`main`. Because the root app self-heals the manifests, the retarget is a Git commit, not a `kubectl patch`; the procedure is in `docs/git-workflow.md` §9.1 and is P6 work.
+- ArgoCD installed via Helm with values in `platform/values/argocd.yaml`; exposed at `https://argocd.localhost`.
 
 ---
 
@@ -358,6 +406,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-18 | **First images published to GHCR (public)** | Pushed `0.0.1-dev.0-11e3604` for all three services with a PAT (classic, `write:packages`). Packages defaulted to **private**; set to public in the UI and linked check pending. Verified logged-out pulls with matching digests: engine `sha256:8cad16f7…78c05`, data `sha256:26e14ab0…56d50`, ingest `sha256:0f8239d4…cc82c`. Overlays intentionally still `newTag: local` — digest pinning is the next P4 step. Token only used via `--password-stdin`, never written to the repo; **must be rotated** (over-privileged classic PAT exposed in chat) | P4 Jenkins + digest pins |
 | 2026-11-18 | **Digest pinning cutover complete (all envs from GHCR)** | `feature/digest-pinning` merged to `develop` (`34c07ec`, pushed). All three overlays now reference `ghcr.io/...@sha256:…` instead of `newTag: local`; rendered output verified with `kubectl kustomize` for dev/staging/prod. dev + staging auto-synced and rolled out; **prod stayed `OutOfSync` until a manual sync** — the approval gate is proven again. Prod synced via the Application `operation` field, then 6 pods rolled out. In-cluster pull proven: a one-off pod with `imagePullPolicy: Always` pulled the engine digest anonymously in 49 ms (56.7 MB). `/version` in prod: `0.0.1-dev.0+11e3604`, `environment: prod`; `/aggregate` `all_reachable: true`; smoke **27/27** (9 per env) | P4 Jenkins |
 | 2026-11-19 | **Design deliverables written + coverage audited** | Added `docs/versioning.md` (GitFlow, SemVer, immutable tags vs `latest`, changelog, Rolling/Blue-Green/Canary comparison), `docs/secrets.md` (Vault → ESO threat model, target `ClusterSecretStore`/`ExternalSecret`/`secretKeyRef`, CI-time vs runtime, rotation, log hygiene), `docs/environment-topology.md` (namespace-vs-cluster justification, env matrix, Terraform walkthrough, sizing check) and `docs/requirements-coverage.md` (per-requirement audit). Added `CHANGELOG.md` baseline. Audit also recorded doc drift: gitleaks stage, rotation demo, tag-retention stage and `progressDeadlineSeconds` are **not** implemented despite earlier claims; the Vault dev token `root` **is** in `platform/values/vault.yaml` | P5 runtime secrets |
+| 2026-11-19 | **Developer→prod runbook + version mechanics corrected** | `docs/git-workflow.md` §9 rewritten as an executable two-path simulation: `fix/delta-value` → develop/dev → `release/1.0.0` → staging → `main`/`v1.0.0` → prod, plus `hotfix/1.0.1` from the tag. Every step has the command, expected console output, expected `/version`, and the evidence to capture. Added `fix/*` as a supported prefix (`version.py`, `test_version.py`, multibranch regex, Jenkinsfile comment); the `Version` stage now runs `git fetch --tags` so the tagged `main` build can prove the release. Corrected `handoff.md` §6 (tag vs image tag, next-patch pre-releases, release.sh bump, back-merge rule), §10 (actual stages; no retention/gitleaks stage) and §11 (prod manual sync, commit message, Argo values path, targetRevision gap). Recorded that the tag is a marker and the release build is the `main` branch build; Jenkins does not discover tags. No commit or push performed | Run the §9 simulation manually |
 
 ### Ingress host map (verified 2026-11-18)
 
@@ -385,7 +434,7 @@ Note: Windows does not resolve `*.localhost`; browsers do. Use
 | Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd` CLI, `vault` CLI, `trivy`, `gh` |
 | Git identity | `Daniel Barel <dbarel@gmail.com>` |
 | Git config | `core.autocrlf=true`, `init.defaultBranch=master` |
-| Remote | `origin` exists, **empty** (no branches); local `main` has 1 commit, `develop` 3 (as of 2026-11-18); first push still pending |
+| Remote | `origin` on GitHub. `main` = `433f9ac` (scaffold only, no Jenkinsfile/overlays yet); `develop` = `82cb5cb` (P4 complete, 0.0.1-dev.5). Remote branches exist and CI polls them (as of 2026-11-19). |
 | Python note | `python` resolves to msys64 3.12.7; `py -3.11` also available |
 | Skills present | `python-standards` (Tier-1), `python-craft` (advisory), `python-review` (combined), `backend-Standards` (FastAPI extension), `architecture-ux-generate-flow` |
 
@@ -393,10 +442,76 @@ Note: Windows does not resolve `*.localhost`; browsers do. Use
 
 ## 20. Next action
 
-**P5 — runtime secrets** (per §14): `ClusterSecretStore` + `ExternalSecret` per
-namespace, a secret consumed by the pods (`secretKeyRef`), Vault seeding, the
-rotation demo, and proof that no secret value exists in Git, manifests, images
-or logs.
+**Manual end-to-end delivery simulation — follow `docs/git-workflow.md` §9.**
+
+Goal: prove the whole chain with one visible code change, in this order:
+
+`fix/delta-value` → PR → `develop` (CI → dev) → `release/1.0.0` (CI → staging)
+→ `main` + `v1.0.0` (CI → prod overlay) → manual Argo CD sync → verified in
+prod. Then repeat the emergency path with `hotfix/1.0.1` from the tag.
+
+Versions and tags to expect on the first run (`base_version.json` is still
+0.0.0, no tags exist):
+
+| Stage | Version | Image tag | Git tag | Environment |
+|---|---|---|---|---|
+| fix branch | `0.0.1-delta-value.<N>+<sha>` | not pushed | — | — |
+| develop | `0.0.1-dev.<M>+<sha>` | `0.0.1-dev.<M>-<sha>` | — | dev |
+| release/1.0.0 | `1.0.0-rc.<K>+<sha>` | `1.0.0-rc.<K>-<sha>` | — | staging |
+| main | `1.0.0` | `1.0.0` | `v1.0.0` | prod (manual sync) |
+| hotfix/1.0.1 | `1.0.1-hotfix.<J>+<sha>` | `1.0.1-hotfix.<J>-<sha>` | — | staging |
+| main | `1.0.1` | `1.0.1` | `v1.0.1` | prod (manual sync) |
+
+Preconditions to settle **before** step 1:
+
+1. **Apply the pending working-tree changes** (this document, `docs/*`,
+   `CHANGELOG.md`, `fix/` support in `version.py` / `test_version.py` /
+   `01-multibranch.groovy`, and `git fetch --tags` in the Jenkinsfile). They are
+   uncommitted by instruction. Commit them on `develop` through the normal PR
+   flow before the simulation. The running multibranch job keeps the branch
+   filter it was created with, so either refresh that filter in the Jenkins UI
+   once (add `fix/.+|`) or use `bugfix/...` for the simulation; updating the
+   controller image alone does not change an existing job.
+2. **Argo target revisions.** `bituach-dev` correctly tracks `develop`.
+   `bituach-staging` must track the active `release/*`/`hotfix/*` branch and
+   `bituach-prod` must track `main`. Because `bituach-root` self-heals the app
+   manifests, these are Git commits, not `kubectl patch` calls; see
+   `docs/git-workflow.md` §9.1. Until this is done, staging/prod will not see
+   the new digests. Permanent wiring is P6.
+3. **Main push permission.** `github-token` must be able to push the
+   `[skip ci]` digest commit to `main`. P4 only proved the develop push. If
+   `main` protection blocks the bot, the `GitOps` stage fails with 403 and prod
+   never gets the pin.
+4. **`main` is far behind.** `main` is at `433f9ac` (scaffold only); it has no
+   Jenkinsfile and no overlays until the release merge. That merge is the first
+   release and is expected to be large.
+5. **Tag visibility.** Jenkins does not discover tags as builds; the release
+   build is the `main` **branch** build. Push `main` and the tag together
+   (`--follow-tags`) and rely on the Version stage's `git fetch --tags` to make
+   `git describe --exact-match` succeed.
+
+**Pre-flight state verified 2026-11-19:** cluster and all four Argo apps healthy;
+all apps track `develop`; no tags; dev runs `0.0.1-dev.5+877242a`, staging/prod
+run `0.0.1-dev.0+11e3604`; `data` item 4 is `99.99`; Jenkins `develop` #5 and
+`feature/p4-jenkins` #10 exist, and `main` has no job yet (no Jenkinsfile on the
+branch). Three blockers to clear before Step 1:
+
+- the **running** Jenkins job's branch regex has no `fix/` (use `bugfix/` or
+  refresh the job filter in the UI — rebuilding the controller does not update
+  an existing job);
+- **WSL has no git identity**, so `scripts/release.sh` would fail at its commit;
+  set `user.name` / `user.email` in the repository (see `docs/git-workflow.md`
+  §9.1 Phase 3);
+- **`main` write permission** for `github-token` is unverified; if protection
+  blocks it, the release build's GitOps stage fails with 403.
+
+Also: `pwsh` is not installed on this machine; use
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\ci\jenkins.ps1 <cmd>`.
+
+After the simulation, close the remaining deliverables in this order: P5
+runtime secrets (`docs/secrets.md` is the specification), gitleaks in
+`Preflight`, tag retention, `README.md` + `docs/decisions.md`, then the
+observability/runbook documents.
 
 **Open item #3 is closed:** a classic PAT exists and is stored only as the
 Jenkins credential `github-token`; the pipeline pushes to GHCR and commits the
@@ -404,9 +519,10 @@ overlay digest. The image store is now GHCR for all environments; the `ctr`
 import path remains as an offline fallback.
 
 Known follow-ups recorded during P3/P4:
-- Overlays now pin `image@sha256:…` digests; keep it that way (§6).
-- All three child Applications still track `targetRevision: develop`; promotion
-  wiring (release branch for staging, tag for prod) is P6 work.
+- Overlays pin `image@sha256:…` digests; keep it that way (§6).
+- All three child Applications still track `targetRevision: develop`;
+  promotion wiring (staging → release branch, prod → `main`) is performed
+  manually during the simulation and permanently wired in P6.
 - Argo CD emits a finalizer warning (`resources-finalizer.argocd.argoproj.io`
   lacks a `/`); cosmetic on k8s 1.36, left as the Argo CD documented value.
 - The Jenkins controller mounts the host Docker socket and runs with
