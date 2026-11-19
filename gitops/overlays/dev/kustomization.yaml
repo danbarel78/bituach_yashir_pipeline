@@ -31,11 +31,11 @@ resources:
 # from tag 0.0.1-dev.0-11e3604 and verified with a logged-out pull.
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine
-    digest: sha256:9cbbe02ee8bd240efb8dd25a3ee4872ba26e8f16fec79f59acc74667cb95220a
+    digest: sha256:ef4996d07c653d0d8925d44afd2818b2e6a6c2b788e127e2332c7bb064d37244
   - name: ghcr.io/danbarel78/bituach-yashir-data
-    digest: sha256:f486ab1cea6d30a08a8fa56ac1eae233ace5c6804a93935f2374ab87bbdfcd5c
+    digest: sha256:2f5b7118e470e4792e5697eaf964a09f1d0ee23d23e84b0f5deb7ef4bba3da62
   - name: ghcr.io/danbarel78/bituach-yashir-ingest
-    digest: sha256:0e016a982fb2dd3caf2167331ee7fe540c2adf3a5c3d0ab9fde8f1593c66f9de
+    digest: sha256:e059240a49a1331227b81747e3b03ff5d900a40033b559e3aff539b9937e4366
 
 # One replica per service: no autoscaling in dev (HPA is disabled by design).
 replicas:
