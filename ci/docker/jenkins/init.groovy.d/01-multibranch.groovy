@@ -19,7 +19,7 @@ import org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject
 
 final String JOB_NAME = 'bituach-yashir'
 final String REPO_URL = 'https://github.com/danbarel78/bituach_yashir_pipeline.git'
-final String BRANCH_REGEX = '^(develop|main|release/.+|hotfix/.+|feature/.+|bugfix/.+|chore/.+|docs/.+|refactor/.+|test/.+|dependabot/.+)$'
+final String BRANCH_REGEX = '^(develop|main|release/.+|hotfix/.+|feature/.+|fix/.+|bugfix/.+|chore/.+|docs/.+|refactor/.+|test/.+|dependabot/.+)$'
 
 def jenkins = Jenkins.get()
 

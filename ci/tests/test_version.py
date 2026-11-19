@@ -29,6 +29,7 @@ BUILD = 7
     ("branch", "expected"),
     [
         ("feature/login-timeout", "1.2.4-login-timeout.7+abc1234"),
+        ("fix/session-expiry", "1.2.4-session-expiry.7+abc1234"),
         ("bugfix/session-expiry", "1.2.4-session-expiry.7+abc1234"),
         ("chore/bump-deps", "1.2.4-bump-deps.7+abc1234"),
         ("docs/secrets", "1.2.4-secrets.7+abc1234"),

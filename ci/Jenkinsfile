@@ -1,7 +1,7 @@
 // Bituach Yashir - multibranch CI/CD pipeline.
 //
 // Branch behaviour (see docs/git-workflow.md and handoff.md):
-//   feature/*, bugfix/*, chore/*, docs/*, refactor/*, test/*, dependabot/*
+//   feature/*, fix/*, bugfix/*, chore/*, docs/*, refactor/*, test/*, dependabot/*
 //       build + lint + types + test + SAST + dependency audit + image scan
 //       (no push, no deploy)
 //   develop      -> push dev image    -> Argo CD dev (auto)     -> smoke
@@ -69,6 +69,11 @@ pipeline {
         stage('Version') {
           steps {
             script {
+              // The release build runs on the main *branch* at the commit that
+              // release.sh tagged. Fetch tags explicitly so
+              // `git describe --exact-match --tags HEAD` can see vX.Y.Z even if
+              // the multibranch checkout did not auto-follow it.
+              sh 'git fetch --tags --force --quiet || true'
               def info = readJSON(
                 text: sh(script: 'python3 ci/scripts/version.py --json', returnStdout: true).trim()
               )

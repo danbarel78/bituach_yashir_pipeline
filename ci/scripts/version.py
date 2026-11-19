@@ -6,6 +6,7 @@ Branch-driven increment logic (see docs/versioning.md):
 | branch / event     | computed version              | registry tags | deploys to |
 |--------------------|-------------------------------|---------------|------------|
 | feature/<name>     | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| fix/<name>         | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
 | bugfix/chore/docs  | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
 | refactor/test/     | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
 | dependabot/*       | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
@@ -58,6 +59,7 @@ BASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 # one rule: next patch + sanitised branch slug + build number + commit.
 FEATURE_PREFIXES = (
     "feature/",
+    "fix/",
     "bugfix/",
     "chore/",
     "docs/",
