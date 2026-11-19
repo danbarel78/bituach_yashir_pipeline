@@ -161,3 +161,134 @@ finish together, the script rebases and retries up to three times.
 - The CI credential can write only through the pipeline; it is a classic PAT
   (`repo` scope), which is broader than ideal. The production improvement is a
   deploy key or a fine-grained token limited to this repository.
+
+## 9. End-to-end: what happens when you push
+
+This is the whole process, in order, with the commands and the evidence to
+check at each step. The numbers below are from the first real run
+(`develop`, build #5, version `0.0.1-dev.5+877242a`).
+
+### Step 0 — prerequisites (once)
+
+| Requirement | How to verify |
+|---|---|
+| Cluster running | `kubectl get nodes` → `Ready` |
+| Jenkins running | `pwsh ./ci/jenkins.ps1 status` → HTTP 200 |
+| Credential exists | Jenkins → Credentials → `github-token` |
+| Public GHCR packages | `docker pull ghcr.io/danbarel78/bituach-yashir-engine:<tag>` without login |
+
+### Step 1 — commit on the right branch
+
+```bash
+git checkout develop          # or: feature/<name>, release/X.Y.Z, hotfix/X.Y.Z
+git add -A
+git commit -m "feat: ..."     # Conventional Commit; it feeds the changelog
+```
+
+The branch name is the input to the version calculation. There is no version
+to edit by hand.
+
+### Step 2 — local sanity (optional but faster than CI)
+
+```bash
+make lint && make typecheck && make test
+python3 ci/scripts/version.py          # what CI will compute
+```
+
+### Step 3 — push
+
+```bash
+git push origin develop
+```
+
+### Step 4 — Jenkins notices (≤ 1 minute)
+
+- Per-branch polling: `git ls-remote` every minute (`pollSCM` in the Jenkinsfile).
+- Folder re-index every 5 minutes (new branches only).
+- Manual: **Scan Multibranch Pipeline Now**, then **Build Now**.
+
+Console line to look for:
+
+```
+version=0.0.1-dev.5+877242a tag=0.0.1-dev.5-877242a branch=develop sha=877242a target=dev
+```
+
+### Step 5 — quality gates run (in this order)
+
+`Preflight` → `Version` → `Setup` → `Lint` → `Types` → `Test` → `SAST` →
+`Dependencies` → `Build` → `Image scan`. Any failure stops the build before
+anything is published.
+
+Artifacts: `reports/bandit-*.json`, `reports/requirements-*.txt`,
+`reports/trivy-*.json`, `digests.txt`.
+
+### Step 6 — images are pushed
+
+```
+ghcr.io/danbarel78/bituach-yashir-engine:0.0.1-dev.5-877242a
+ghcr.io/danbarel78/bituach-yashir-data:0.0.1-dev.5-877242a
+ghcr.io/danbarel78/bituach-yashir-ingest:0.0.1-dev.5-877242a
+```
+
+`digests.txt` records the exact digests. `+` becomes `-` because OCI tags
+cannot contain `+`; the version inside the image keeps the SemVer form.
+
+### Step 7 — CI commits the digest back
+
+```
+chore(gitops): pin 0.0.1-dev.5+877242a [skip ci]
+ M gitops/overlays/dev/kustomization.yaml
+```
+
+The script refuses to commit anything outside `gitops/overlays/`, rebases and
+retries on a non-fast-forward, and marks the commit `[skip ci]` so it cannot
+trigger another build. Builds #6 and #7 were `NOT_BUILT` for exactly this
+reason — that is the loop prevention working.
+
+### Step 8 — Argo CD reconciles
+
+The pipeline forces `argocd.argoproj.io/refresh=normal`, then waits until the
+application's `status.sync.revision` equals the pushed commit **and** the
+status is `Synced/Healthy`. Waiting only for "Synced" is not enough: it can
+describe the revision that was deployed before the push.
+
+### Step 9 — smoke test through the real external path
+
+```
+Smoke test: dev (https://dev.bituach.localhost)
+  PASS  engine  /        /healthz        /version (0.0.1-dev.5+877242a)
+  PASS  data    /        /healthz        /version (0.0.1-dev.5+877242a)
+  PASS  ingest  /        /healthz        /version (0.0.1-dev.5+877242a)
+All 9 smoke checks passed.
+```
+
+### Step 10 — verify it yourself
+
+```powershell
+kubectl -n argocd get applications
+kubectl get deploy -n bituach-dev -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+curl.exe -sk --resolve engine.dev.bituach.localhost:443:127.0.0.1 https://engine.dev.bituach.localhost/version
+git -C . log --oneline -2
+```
+
+Expected: `Synced/Healthy`, digests that match `gitops/overlays/dev`, and
+`/version` showing the same version the build log printed.
+
+### Step 11 — what differs per branch
+
+| Branch | Steps 6–9 |
+|---|---|
+| `feature/*` and friends | stop after step 5; no push, no deploy |
+| `develop` | full path into `dev` |
+| `release/X.Y.Z` | full path into `staging` |
+| `main` + tag | full path updates the `prod` overlay, then stops; a human syncs prod |
+
+### Common failures and what they mean
+
+| Message | Cause |
+|---|---|
+| `mutable image tag found in an overlay` | someone reintroduced `:latest`/`:local` |
+| `unsupported branch name` | branch does not match the policy |
+| `main builds must come from a tag` | `release.sh` not run / tag not pushed |
+| `Timed out waiting ... at <sha>` | Argo CD did not reconcile that commit; check the app's repo/refresh |
+| `9 of 9 smoke checks failed` | ingress host resolution inside the container (IPv4/IPv6) |

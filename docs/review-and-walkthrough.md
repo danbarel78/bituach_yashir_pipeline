@@ -7,6 +7,11 @@ assignment, prepare answers to likely questions, and give a hands-on guide.
 (Jenkins, runtime secrets, documentation/release) are **not built yet** — this
 document says so explicitly wherever it matters.
 
+> **Update 2026-11-19:** the design documents now exist —
+> `docs/versioning.md`, `docs/secrets.md`, `docs/environment-topology.md` and the
+> coverage audit `docs/requirements-coverage.md`. The runtime secret wiring (P5)
+> is still not implemented; the audit records that explicitly.
+
 Everything marked "verified" below was re-checked on the cluster on
 2026-11-18: `scripts/verify.sh` **21/21**, production smoke **9/9**, all four
 Argo CD applications **Synced/Healthy**.
@@ -23,15 +28,15 @@ Argo CD applications **Synced/Healthy**.
 | P3 | Terraform (quota/RBAC/netpol/HPA), kustomize overlays, app-of-apps | ✅ done |
 | — | Endpoint fixes (`/items`, `/ingest`) + per-service hostnames | ✅ done |
 | — | Images published to public GHCR + overlays pinned by digest | ✅ done |
-| P4 | Jenkins CI/CD pipeline | ⛔ not started |
+| P4 | Jenkins CI/CD pipeline | ✅ done |
 | P5 | Vault → ESO → Pod secret path end-to-end | ⛔ components installed, path not wired |
 | P6 | README, decisions doc, versioning docs, `v1.0.0` tag, CHANGELOG | ⛔ not started |
 
 **One-sentence status for a manager:**
-> The platform and the GitOps delivery loop are real and verified end-to-end;
-> three services deploy to three isolated environments from Git. CI/CD and the
-> secret-injection path are the next two phases, and the written deliverables
-> come last.
+> The platform, the GitOps delivery loop and the Jenkins pipeline are real and
+> verified end-to-end; three services build, scan, push and deploy to three
+> isolated environments from Git. Runtime secret injection (Vault → ESO → pod)
+> and the written deliverables are the next two phases.
 
 > Note: `handoff.md` §3 describes the **target** end state of the whole
 > assignment. This document describes what is actually running **today**.
@@ -101,7 +106,7 @@ prod's "Sync" button, which is the approval gate.
 | Assignment requirement | Where it is implemented | Status today |
 |---|---|---|
 | Real local cluster, working POC, not mocked | Docker Desktop Kubernetes, 3 namespaces, live URLs | ✅ |
-| Jenkins: build, tests, SAST/dependency + image scan, GitOps deploy | `ci/Jenkinsfile`, `ci/docker/jenkins/` | ⛔ **not built** (P4) |
+| Jenkins: build, tests, SAST/dependency + image scan, GitOps deploy | `ci/Jenkinsfile`, `ci/docker/jenkins/` | ✅ implemented; green on feature and develop |
 | Version management: GitFlow, SemVer, tagging policy, changelog, rollout | `ci/scripts/version.py`, `scripts/release.sh`, `base_version.json`, `strategy.rollingUpdate`, digest-pinned overlays | ⚠️ SemVer engine + immutable digest pins done; docs, tags, CHANGELOG missing (P6) |
 | Vault + ESO, no secrets in manifests/code/logs, CI-time + runtime | Vault and ESO installed; `ExternalSecret`/`ClusterSecretStore` not created | ⚠️ **components only** (P5) |
 | Dev/staging/prod + justification + Terraform (quota, limits, RBAC, SA, netpol, HPA, replicas) | `terraform/modules/*`, `terraform/envs/*` | ✅ code written and applied; written justification still to do |
@@ -526,18 +531,21 @@ repository is untouched, so `./scripts/bootstrap.sh` + Terraform bring it back.
 
 Ordered by importance to the assignment:
 
-1. **Jenkins pipeline (P4)** — the assignment names it explicitly; currently
-   absent. Needs the controller image, `Jenkinsfile`, scan script, PAT for GHCR.
-2. **Runtime secrets (P5)** — `ClusterSecretStore` + `ExternalSecret` per
+1. **Runtime secrets (P5)** — `ClusterSecretStore` + `ExternalSecret` per
    namespace, consumed by the pods, plus the rotation demo. Components are
    installed; nothing is wired.
-3. **Deliverable docs (P6)** — `README.md` (how to run/test) and
+2. **Deliverable docs (P6)** — `README.md` (how to run/test) and
    `docs/decisions.md` (one page) are required deliverables and **do not exist
-   yet**. Same for `docs/versioning.md`, `git-workflow.md`, `environment-topology.md`,
-   `observability-design.md`, `secrets.md`, `runbook.md`, `architecture.md`.
-4. **Promotion wiring** — all apps track `develop`; staging should track the
+   yet**. Same for `docs/versioning.md`, `environment-topology.md`,
+   `observability-design.md`, `secrets.md`, `runbook.md`, `architecture.md`
+   (`docs/git-workflow.md` is written and covers the pipeline).
+3. **Promotion wiring** — all apps track `develop`; staging should track the
    release branch, prod the tag.
-5. **Release artifacts** — no `CHANGELOG.md`, no `v1.0.0` tag, no real release
+4. **Release artifacts** — no `CHANGELOG.md`, no `v1.0.0` tag, no real release
    run of `scripts/release.sh`.
+5. **Accepted gaps (deliberate, Decision 4 = D)** — no secret scanning
+   (gitleaks) and no GHCR retention in the pipeline. Public packages are not
+   billed, and unsafe pruning can break a pinned digest; add gitleaks first if
+   the security story needs mechanical proof.
 
-Items 1–3 are the ones a reviewer will notice first.
+Items 1–2 are the ones a reviewer will notice first.
