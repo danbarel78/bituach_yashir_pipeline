@@ -245,10 +245,13 @@ pipeline {
             sh '''
               set -euo pipefail
               # "Synced" can describe the revision that was already deployed
-              # before our push. Wait for the exact commit we just pushed.
+              # before our push. Force a refresh, then wait for the exact commit
+              # we just pushed to be reconciled.
               target="$(cat gitops-revision.txt)"
               echo "waiting for Argo CD to reconcile ${target}"
-              for i in $(seq 1 40); do
+              kubectl -n argocd annotate application "bituach-$TARGET_ENV" \
+                argocd.argoproj.io/refresh=normal --overwrite >/dev/null
+              for i in $(seq 1 60); do
                 revision="$(kubectl -n argocd get application "bituach-$TARGET_ENV" \
                   -o jsonpath='{.status.sync.revision}')"
                 status="$(kubectl -n argocd get application "bituach-$TARGET_ENV" \
