@@ -13,10 +13,7 @@ router = APIRouter(tags=["catalog"])
     "/items",
     response_model=ItemsResponse,
     summary="Return the sample catalog",
-    description=(
-        "Contract endpoint required by the platform: proves the service can serve "
-        "domain data, not just its own metadata."
-    ),
+    description=("Contract endpoint required by the platform: proves the service can serve domain data, not just its own metadata."),
 )
 async def read_items(settings: SettingsDep) -> ItemsResponse:
     """Return the static sample catalog."""
