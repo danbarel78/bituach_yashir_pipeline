@@ -163,6 +163,10 @@ pipeline {
           steps {
             sh '''
               set -euo pipefail
+              # The service Dockerfiles use BuildKit cache mounts. The host's
+              # buildx CLI is not installed in this image, but the daemon's
+              # BuildKit is enough.
+              export DOCKER_BUILDKIT=1
               for s in $SERVICES; do
                 echo "==> docker build: $s ($APP_VERSION, $GIT_SHA)"
                 docker build \
