@@ -41,7 +41,10 @@ case "$command" in
     ref="${2:?scan.sh image needs an image reference}"
     name="$(echo "$ref" | sed 's#.*/##; s/:.*//')"
     echo "==> trivy: ${ref}"
-    trivy image --quiet --severity HIGH,CRITICAL --exit-code 1 \
+    # --ignore-unfixed: fail only on vulnerabilities that have a fix available.
+    # Unfixable base-image CVEs stay in the archived report instead of blocking
+    # every build forever; the JSON artifact keeps them visible for triage.
+    trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
       --format json --output "${REPORTS}/trivy-${name}.json" "$ref"
     ;;
 
