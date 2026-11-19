@@ -1,0 +1,290 @@
+// Bituach Yashir - multibranch CI/CD pipeline.
+//
+// Branch behaviour (see docs/git-workflow.md and handoff.md):
+//   feature/*, bugfix/*, chore/*, docs/*, refactor/*, test/*, dependabot/*
+//       build + lint + types + test + SAST + dependency audit + image scan
+//       (no push, no deploy)
+//   develop      -> push dev image    -> Argo CD dev (auto)     -> smoke
+//   release/*    -> push rc image     -> Argo CD staging (auto) -> smoke
+//   main + vX.Y.Z-> push final image  -> prod overlay updated   -> manual sync
+//
+// The GitOps commit carries [skip ci]; the Preflight stage aborts such builds
+// so the pipeline cannot trigger itself.
+
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+    timeout(time: 45, unit: 'MINUTES')
+  }
+
+  // Per-branch polling: the webhook-free equivalent of "build on push" for a
+  // laptop POC. git ls-remote does not consume the GitHub API quota; the
+  // multibranch folder itself re-indexes every 5 minutes (see the job bootstrap).
+  triggers { pollSCM('* * * * *') }
+
+  environment {
+    REGISTRY         = 'ghcr.io/danbarel78'
+    IMAGE_PREFIX     = 'bituach-yashir'
+    SERVICES         = 'engine data ingest'
+    REPO             = 'danbarel78/bituach_yashir_pipeline'
+    GIT_SHA          = "${env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : '0000000'}"
+    SMOKE_RESOLVE_IP = '127.0.0.1'
+  }
+
+  stages {
+    stage('Preflight') {
+      steps {
+        script {
+          def message = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+          env.SKIP_CI = message.contains('[skip ci]') ? 'true' : 'false'
+          if (env.SKIP_CI == 'true') {
+            currentBuild.result = 'NOT_BUILT'
+            currentBuild.description = 'skipped: [skip ci]'
+            echo 'Commit is marked [skip ci] - the GitOps commit cannot trigger itself.'
+          }
+        }
+        script {
+          if (env.SKIP_CI != 'true') {
+            sh '''
+              set -euo pipefail
+              echo "==> guard: no mutable image tags in overlays"
+              if grep -rInE ':(latest|local)([[:space:]]|$)' gitops/overlays/*/kustomization.yaml; then
+                echo "mutable image tag found in an overlay - refusing to build" >&2
+                exit 1
+              fi
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Quality and delivery') {
+      when { expression { env.SKIP_CI != 'true' } }
+
+      stages {
+        stage('Version') {
+          steps {
+            script {
+              def info = readJSON(
+                text: sh(script: 'python3 ci/scripts/version.py --json', returnStdout: true).trim()
+              )
+              env.APP_VERSION = info.version
+              env.IMAGE_TAG = info.version.replace('+', '-')
+              env.IS_RELEASE = (info.version ==~ /\d+\.\d+\.\d+/) ? 'true' : 'false'
+
+              if (info.branch == 'develop') {
+                env.TARGET_ENV = 'dev'
+                env.TARGET_BRANCH = 'develop'
+              } else if (info.branch.startsWith('release/')) {
+                env.TARGET_ENV = 'staging'
+                env.TARGET_BRANCH = info.branch
+              } else if (info.branch == 'main') {
+                env.TARGET_ENV = 'prod'
+                env.TARGET_BRANCH = 'main'
+              } else {
+                env.TARGET_ENV = 'none'
+                env.TARGET_BRANCH = ''
+              }
+
+              currentBuild.description = "${env.APP_VERSION} -> ${env.TARGET_ENV}"
+              echo "version=${env.APP_VERSION} tag=${env.IMAGE_TAG} " +
+                   "branch=${info.branch} sha=${info.gitSha} target=${env.TARGET_ENV}"
+            }
+          }
+        }
+
+        stage('Setup') {
+          steps {
+            sh '''
+              set -euo pipefail
+              for s in $SERVICES; do
+                echo "==> uv sync: $s"
+                ( cd "services/$s" && uv sync --frozen --extra dev )
+              done
+            '''
+          }
+        }
+
+        stage('Lint') {
+          steps {
+            sh '''
+              set -euo pipefail
+              for s in $SERVICES; do
+                echo "==> ruff: $s"
+                ( cd "services/$s" && uv run ruff check . && uv run ruff format --check . )
+              done
+            '''
+          }
+        }
+
+        stage('Types') {
+          steps {
+            sh '''
+              set -euo pipefail
+              for s in $SERVICES; do
+                echo "==> mypy: $s"
+                ( cd "services/$s" && uv run mypy . )
+              done
+            '''
+          }
+        }
+
+        stage('Test') {
+          steps {
+            sh '''
+              set -euo pipefail
+              for s in $SERVICES; do
+                echo "==> pytest: $s"
+                ( cd "services/$s" && uv run pytest --cov )
+              done
+              echo "==> pytest: pipeline version policy"
+              services/engine/.venv/bin/python -m pytest ci/tests -q
+            '''
+          }
+        }
+
+        stage('SAST') {
+          steps {
+            sh './ci/scripts/scan.sh sast'
+          }
+        }
+
+        stage('Dependencies') {
+          steps {
+            sh './ci/scripts/scan.sh deps'
+          }
+        }
+
+        stage('Build') {
+          steps {
+            sh '''
+              set -euo pipefail
+              # The service Dockerfiles use BuildKit cache mounts. The host's
+              # buildx CLI is not installed in this image, but the daemon's
+              # BuildKit is enough.
+              export DOCKER_BUILDKIT=1
+              for s in $SERVICES; do
+                echo "==> docker build: $s ($APP_VERSION, $GIT_SHA)"
+                docker build \
+                  --build-arg APP_VERSION="$APP_VERSION" \
+                  --build-arg GIT_SHA="$GIT_SHA" \
+                  -t "$REGISTRY/$IMAGE_PREFIX-$s:$IMAGE_TAG" \
+                  "services/$s"
+              done
+            '''
+          }
+        }
+
+        stage('Image scan') {
+          steps {
+            sh '''
+              set -euo pipefail
+              for s in $SERVICES; do
+                ./ci/scripts/scan.sh image "$REGISTRY/$IMAGE_PREFIX-$s:$IMAGE_TAG"
+              done
+            '''
+          }
+        }
+
+        stage('Push') {
+          when { expression { env.TARGET_ENV != 'none' } }
+          steps {
+            withCredentials([usernamePassword(
+              credentialsId: 'github-token',
+              usernameVariable: 'GHCR_USER',
+              passwordVariable: 'GHCR_TOKEN'
+            )]) {
+              sh '''
+                set -euo pipefail
+                set +x
+                echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
+                : > digests.txt
+                for s in $SERVICES; do
+                  ref="$REGISTRY/$IMAGE_PREFIX-$s:$IMAGE_TAG"
+                  echo "==> push: $ref"
+                  docker push "$ref" >/dev/null
+                  echo "$s $(docker inspect --format '{{index .RepoDigests 0}}' "$ref")" >> digests.txt
+                done
+                docker logout ghcr.io >/dev/null
+              '''
+            }
+            sh 'cat digests.txt'
+          }
+        }
+
+        stage('GitOps') {
+          when { expression { env.TARGET_ENV != 'none' } }
+          steps {
+            withCredentials([usernamePassword(
+              credentialsId: 'github-token',
+              usernameVariable: 'GIT_USER',
+              passwordVariable: 'GIT_TOKEN'
+            )]) {
+              sh '''
+                set +x
+                ENV_NAME="$TARGET_ENV" \
+                VERSION="$APP_VERSION" \
+                TARGET_BRANCH="$TARGET_BRANCH" \
+                DIGESTS_FILE=digests.txt \
+                REPO="$REPO" \
+                GIT_TOKEN="$GIT_TOKEN" \
+                BUILD_NUMBER="$BUILD_NUMBER" \
+                ./ci/scripts/gitops-update.sh
+              '''
+            }
+          }
+        }
+
+        stage('Wait for Argo CD') {
+          when { expression { env.TARGET_ENV == 'dev' || env.TARGET_ENV == 'staging' } }
+          steps {
+            sh '''
+              set -euo pipefail
+              for i in $(seq 1 40); do
+                status="$(kubectl -n argocd get application "bituach-$TARGET_ENV" \
+                  -o jsonpath='{.status.sync.status}/{.status.health.status}')"
+                echo "argo: $status"
+                [ "$status" = "Synced/Healthy" ] && exit 0
+                sleep 5
+              done
+              echo "timed out waiting for bituach-$TARGET_ENV to become Synced/Healthy" >&2
+              exit 1
+            '''
+          }
+        }
+
+        stage('Smoke') {
+          when { expression { env.TARGET_ENV == 'dev' || env.TARGET_ENV == 'staging' } }
+          steps {
+            sh '''
+              set -euo pipefail
+              ip="$(getent hosts host.docker.internal | awk '{print $1}' | head -1)"
+              SMOKE_RESOLVE_IP="${ip:-127.0.0.1}" ./scripts/smoke-test.sh --env "$TARGET_ENV"
+            '''
+          }
+        }
+
+        stage('Prod handoff') {
+          when { expression { env.TARGET_ENV == 'prod' } }
+          steps {
+            echo "Prod overlay updated to ${APP_VERSION} (${IMAGE_TAG})."
+            echo "Argo CD will show bituach-prod as OutOfSync; prod deploys only after a manual Sync."
+            echo "Approve at: http://argocd.localhost/applications/argocd/bituach-prod"
+            sh 'kubectl -n argocd get application bituach-prod'
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'reports/**, digests.txt', allowEmptyArchive: true, fingerprint: true
+      cleanWs()
+    }
+  }
+}

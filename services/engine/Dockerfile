@@ -21,6 +21,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim AS runtime
 
+# Apply Debian security updates that landed after this base image was built.
+# Without this the image scan fails on a base-package CVE we can fix, and
+# "ignore-unfixed" alone would not be honest.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \

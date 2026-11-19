@@ -1,0 +1,23 @@
+# Jenkins configuration as code.
+#
+# One local admin account. The password arrives from the environment at
+# container start (JENKINS_ADMIN_PASSWORD) and is never written to the repo.
+# Anonymous users get nothing; every authenticated user is an administrator,
+# which is acceptable only because this controller is local to the POC.
+jenkins:
+  systemMessage: "Bituach Yashir - Part 1 POC | local Docker Desktop cluster"
+  numExecutors: 2
+  scmCheckoutRetryCount: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "http://localhost:8080/"

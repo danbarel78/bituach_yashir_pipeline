@@ -1,0 +1,17 @@
+# Jenkins plugins for the POC controller.
+#
+# Names only: jenkins-plugin-cli resolves the newest version compatible with
+# the pinned Jenkins core. After the first successful build, replace each line
+# with "name:version" (from Manage Jenkins -> Plugins -> Installed) to make the
+# image reproducible. Until then the image build itself is not reproducible.
+configuration-as-code
+credentials-binding
+git
+github
+github-branch-source
+pipeline-stage-view
+pipeline-utility-steps
+timestamper
+workflow-aggregator
+workflow-multibranch
+ws-cleanup
