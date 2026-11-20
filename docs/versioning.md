@@ -36,6 +36,10 @@ decision record).
 | `hotfix/X.Y.Z` | Urgent fix cut from a release tag | `main`, then back-merge to `develop` | staging → prod | deleted after merge |
 | `dependabot/*` | Automated dependency updates | `develop` | nothing | managed by the bot |
 
+“Deploys to staging” means the release/hotfix build writes the staging overlay
+to `develop`; the staging Application tracks `develop`, so no branch retarget is
+needed. The production approval is the manual Argo CD Sync, not a second review.
+
 `main` and `develop` are protected: changes arrive only through a pull request,
 CI must be green, and only the release manager merges into `main`. No
 environment is deployed from a developer workstation.
@@ -429,8 +433,8 @@ versions can coexist during a rollout.
 | `/version` reports build identity | service endpoint, smoke test | implemented |
 | RollingUpdate with zero-downtime settings | `gitops/base/*/deployment.yaml` | implemented |
 | Changelog generation | `scripts/release.sh`, `CHANGELOG.md` | implemented (baseline) |
-| Full developer→prod runbook | `docs/git-workflow.md` §9 | documented; first execution pending |
-| Argo CD promotion wiring | staging/prod must track the release branch/`main`; manual retarget in §9.1 | **not done** (P6) |
+| Full developer→prod runbook | `docs/git-workflow.md` | documented; first execution pending |
+| Argo CD promotion wiring | dev/staging track `develop`; prod tracks `main` after the first release | implemented (first-release cutover) |
 | First real release `v1.0.0` | `base_version.json` still `0.0.0`, no tags | **not done** |
 | Automated tag retention (last 3) | no Jenkins stage | **not done** |
 | Canary / blue-green | design in §6.2 | documented only |

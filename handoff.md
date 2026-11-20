@@ -285,7 +285,7 @@ updates the `prod` overlay, which a human then syncs.
 - Sync policy: automated prune + self-heal for dev/staging; prod has **no** automated block, so every deployment needs a manual Sync.
 - Drift detection: UI/`argocd app diff`; self-heal demonstrated once.
 - Image promotion: digest pinning in overlays; the commit message is `chore(gitops): pin <version> [skip ci]` (it records the version, not the digest or a pipeline URL; the digest is in the diff).
-- **Promotion wiring gap:** all three child Applications currently track `develop`. A real promotion needs dev→`develop`, staging→the active `release/*`/`hotfix/*` branch, prod→`main`. Because the root app self-heals the manifests, the retarget is a Git commit, not a `kubectl patch`; the procedure is in `docs/git-workflow.md` §9.1 and is P6 work.
+- **Promotion wiring:** dev and staging track `develop`; prod tracks `main` (set once after the first release merge). A release/hotfix build writes only the staging overlay, so a normal develop build cannot move staging. No per-release retargeting.
 - ArgoCD installed via Helm with values in `platform/values/argocd.yaml`; exposed at `https://argocd.localhost`.
 
 ---
@@ -407,6 +407,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-18 | **Digest pinning cutover complete (all envs from GHCR)** | `feature/digest-pinning` merged to `develop` (`34c07ec`, pushed). All three overlays now reference `ghcr.io/...@sha256:…` instead of `newTag: local`; rendered output verified with `kubectl kustomize` for dev/staging/prod. dev + staging auto-synced and rolled out; **prod stayed `OutOfSync` until a manual sync** — the approval gate is proven again. Prod synced via the Application `operation` field, then 6 pods rolled out. In-cluster pull proven: a one-off pod with `imagePullPolicy: Always` pulled the engine digest anonymously in 49 ms (56.7 MB). `/version` in prod: `0.0.1-dev.0+11e3604`, `environment: prod`; `/aggregate` `all_reachable: true`; smoke **27/27** (9 per env) | P4 Jenkins |
 | 2026-11-19 | **Design deliverables written + coverage audited** | Added `docs/versioning.md` (GitFlow, SemVer, immutable tags vs `latest`, changelog, Rolling/Blue-Green/Canary comparison), `docs/secrets.md` (Vault → ESO threat model, target `ClusterSecretStore`/`ExternalSecret`/`secretKeyRef`, CI-time vs runtime, rotation, log hygiene), `docs/environment-topology.md` (namespace-vs-cluster justification, env matrix, Terraform walkthrough, sizing check) and `docs/requirements-coverage.md` (per-requirement audit). Added `CHANGELOG.md` baseline. Audit also recorded doc drift: gitleaks stage, rotation demo, tag-retention stage and `progressDeadlineSeconds` are **not** implemented despite earlier claims; the Vault dev token `root` **is** in `platform/values/vault.yaml` | P5 runtime secrets |
 | 2026-11-19 | **Developer→prod runbook + version mechanics corrected** | `docs/git-workflow.md` §9 rewritten as an executable two-path simulation: `fix/delta-value` → develop/dev → `release/1.0.0` → staging → `main`/`v1.0.0` → prod, plus `hotfix/1.0.1` from the tag. Every step has the command, expected console output, expected `/version`, and the evidence to capture. Added `fix/*` as a supported prefix (`version.py`, `test_version.py`, multibranch regex, Jenkinsfile comment); the `Version` stage now runs `git fetch --tags` so the tagged `main` build can prove the release. Corrected `handoff.md` §6 (tag vs image tag, next-patch pre-releases, release.sh bump, back-merge rule), §10 (actual stages; no retention/gitleaks stage) and §11 (prod manual sync, commit message, Argo values path, targetRevision gap). Recorded that the tag is a marker and the release build is the `main` branch build; Jenkins does not discover tags. No commit or push performed | Run the §9 simulation manually |
+| 2026-11-20 | **Runbook simplified to four steps + fixed Argo tracking** | `docs/git-workflow.md` reduced from 747 lines to one page: `fix/negative-claim` → develop (dev) → `release/1.0.0` (staging) → `main`/`v1.0.0` (prod, manual Sync) → back-merge. Each step has an **Expected output** block. Removed all per-release Argo retargeting: dev and staging track `develop`, prod tracks `main` after the one-time first-release cutover. Jenkinsfile now maps `release/*` **and `hotfix/*`** to `staging` with `TARGET_BRANCH=develop` (this also fixes the previously missing hotfix mapping). Realistic demo change: reject negative `claim_amount` on `POST /ingest` with 422. No manual version edits; `release.sh` is the only bump. | Run the four-step simulation live |
 
 ### Ingress host map (verified 2026-11-18)
 
@@ -442,70 +443,47 @@ Note: Windows does not resolve `*.localhost`; browsers do. Use
 
 ## 20. Next action
 
-**Manual end-to-end delivery simulation — follow `docs/git-workflow.md` §9.**
+**Run the four-step delivery simulation in `docs/git-workflow.md`.**
 
-Goal: prove the whole chain with one visible code change, in this order:
+Goal: prove the whole chain with one visible fix — `POST /ingest` must reject a
+negative `claim_amount`:
 
-`fix/delta-value` → PR → `develop` (CI → dev) → `release/1.0.0` (CI → staging)
-→ `main` + `v1.0.0` (CI → prod overlay) → manual Argo CD sync → verified in
-prod. Then repeat the emergency path with `hotfix/1.0.1` from the tag.
+`fix/negative-claim` → PR → `develop` (CI → dev) → `release/1.0.0` (CI →
+staging) → `main` + `v1.0.0` (CI → prod overlay) → manual Argo CD Sync →
+verified in prod.
 
-Versions and tags to expect on the first run (`base_version.json` is still
-0.0.0, no tags exist):
+Versions on the first run (`base_version.json` is 0.0.0, no tags exist):
 
 | Stage | Version | Image tag | Git tag | Environment |
 |---|---|---|---|---|
-| fix branch | `0.0.1-delta-value.<N>+<sha>` | not pushed | — | — |
+| fix branch | `0.0.1-negative-claim.<N>+<sha>` | not pushed | — | — |
 | develop | `0.0.1-dev.<M>+<sha>` | `0.0.1-dev.<M>-<sha>` | — | dev |
 | release/1.0.0 | `1.0.0-rc.<K>+<sha>` | `1.0.0-rc.<K>-<sha>` | — | staging |
-| main | `1.0.0` | `1.0.0` | `v1.0.0` | prod (manual sync) |
-| hotfix/1.0.1 | `1.0.1-hotfix.<J>+<sha>` | `1.0.1-hotfix.<J>-<sha>` | — | staging |
-| main | `1.0.1` | `1.0.1` | `v1.0.1` | prod (manual sync) |
+| main | `1.0.0` | `1.0.0` | `v1.0.0` | prod (manual Sync) |
 
-Preconditions to settle **before** step 1:
+The flow uses **fixed Argo CD tracking**: dev and staging track `develop`, prod
+tracks `main` after the first release. A release/hotfix build writes only the
+staging overlay, so there is no per-release retargeting. The one-time prod
+switch happens after the main merge, when `main` actually contains
+`gitops/overlays/prod`.
 
-1. **Apply the pending working-tree changes** (this document, `docs/*`,
-   `CHANGELOG.md`, `fix/` support in `version.py` / `test_version.py` /
-   `01-multibranch.groovy`, and `git fetch --tags` in the Jenkinsfile). They are
-   uncommitted by instruction. Commit them on `develop` through the normal PR
-   flow before the simulation. The running multibranch job keeps the branch
-   filter it was created with, so either refresh that filter in the Jenkins UI
-   once (add `fix/.+|`) or use `bugfix/...` for the simulation; updating the
-   controller image alone does not change an existing job.
-2. **Argo target revisions.** `bituach-dev` correctly tracks `develop`.
-   `bituach-staging` must track the active `release/*`/`hotfix/*` branch and
-   `bituach-prod` must track `main`. Because `bituach-root` self-heals the app
-   manifests, these are Git commits, not `kubectl patch` calls; see
-   `docs/git-workflow.md` §9.1. Until this is done, staging/prod will not see
-   the new digests. Permanent wiring is P6.
-3. **Main push permission.** `github-token` must be able to push the
-   `[skip ci]` digest commit to `main`. P4 only proved the develop push. If
-   `main` protection blocks the bot, the `GitOps` stage fails with 403 and prod
-   never gets the pin.
-4. **`main` is far behind.** `main` is at `433f9ac` (scaffold only); it has no
-   Jenkinsfile and no overlays until the release merge. That merge is the first
-   release and is expected to be large.
-5. **Tag visibility.** Jenkins does not discover tags as builds; the release
-   build is the `main` **branch** build. Push `main` and the tag together
-   (`--follow-tags`) and rely on the Version stage's `git fetch --tags` to make
-   `git describe --exact-match` succeed.
+Preconditions before Step 1:
 
-**Pre-flight state verified 2026-11-19:** cluster and all four Argo apps healthy;
-all apps track `develop`; no tags; dev runs `0.0.1-dev.5+877242a`, staging/prod
-run `0.0.1-dev.0+11e3604`; `data` item 4 is `99.99`; Jenkins `develop` #5 and
-`feature/p4-jenkins` #10 exist, and `main` has no job yet (no Jenkinsfile on the
-branch). Three blockers to clear before Step 1:
+1. **Merge the current chore branch (PR #1)** — it contains the shortened
+   runbook, `fix/*` support, the tag fetch, the `release.sh` clean-tree guard
+   and the `release/*` + `hotfix/*` → staging mapping.
+2. **WSL git identity** — `release.sh` commits the bump and tag:
+   `git config user.name "Daniel Barel"` / `user.email "dbarel@gmail.com"`.
+3. **Jenkins branch filter** — the running job predates `fix/*`; either refresh
+   the filter in the UI or use `bugfix/negative-claim` (same versions).
+4. **Main push permission** — `github-token` must be able to push the
+   `[skip ci]` digest commit to `main`; otherwise `GitOps` fails with 403.
+5. **First merge is large** — `main` is still `433f9ac` (scaffold only); the
+   release merge brings the whole tree and creates the `main` Jenkins job.
 
-- the **running** Jenkins job's branch regex has no `fix/` (use `bugfix/` or
-  refresh the job filter in the UI — rebuilding the controller does not update
-  an existing job);
-- **WSL has no git identity**, so `scripts/release.sh` would fail at its commit;
-  set `user.name` / `user.email` in the repository (see `docs/git-workflow.md`
-  §9.1 Phase 3);
-- **`main` write permission** for `github-token` is unverified; if protection
-  blocks it, the release build's GitOps stage fails with 403.
-
-Also: `pwsh` is not installed on this machine; use
+Baseline verified 2026-11-19: cluster and all four Argo apps healthy, all apps
+track `develop`, no tags, dev `0.0.1-dev.5+877242a`, staging/prod
+`0.0.1-dev.0+11e3604`, `data` item 4 = `99.99`. `pwsh` is not installed; use
 `powershell -NoProfile -ExecutionPolicy Bypass -File .\ci\jenkins.ps1 <cmd>`.
 
 After the simulation, close the remaining deliverables in this order: P5
@@ -520,9 +498,7 @@ import path remains as an offline fallback.
 
 Known follow-ups recorded during P3/P4:
 - Overlays pin `image@sha256:…` digests; keep it that way (§6).
-- All three child Applications still track `targetRevision: develop`;
-  promotion wiring (staging → release branch, prod → `main`) is performed
-  manually during the simulation and permanently wired in P6.
+- Dev and staging track `develop`; prod tracks `main` after the first-release cutover. Release/hotfix builds write the staging overlay to `develop`, so no per-release retargeting is needed.
 - Argo CD emits a finalizer warning (`resources-finalizer.argocd.argoproj.io`
   lacks a `/`); cosmetic on k8s 1.36, left as the Argo CD documented value.
 - The Jenkins controller mounts the host Docker socket and runs with

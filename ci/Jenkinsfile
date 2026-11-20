@@ -6,7 +6,11 @@
 //       (no push, no deploy)
 //   develop      -> push dev image    -> Argo CD dev (auto)     -> smoke
 //   release/*    -> push rc image     -> Argo CD staging (auto) -> smoke
+//   hotfix/*     -> push hotfix image -> Argo CD staging (auto) -> smoke
 //   main + vX.Y.Z-> push final image  -> prod overlay updated   -> manual sync
+//
+// Staging and dev both track the develop branch. The release/hotfix build is
+// what writes the staging overlay; a develop build never touches it.
 //
 // The GitOps commit carries [skip ci]; the Preflight stage aborts such builds
 // so the pipeline cannot trigger itself.
@@ -84,9 +88,9 @@ pipeline {
               if (info.branch == 'develop') {
                 env.TARGET_ENV = 'dev'
                 env.TARGET_BRANCH = 'develop'
-              } else if (info.branch.startsWith('release/')) {
+              } else if (info.branch.startsWith('release/') || info.branch.startsWith('hotfix/')) {
                 env.TARGET_ENV = 'staging'
-                env.TARGET_BRANCH = info.branch
+                env.TARGET_BRANCH = 'develop'
               } else if (info.branch == 'main') {
                 env.TARGET_ENV = 'prod'
                 env.TARGET_BRANCH = 'main'
