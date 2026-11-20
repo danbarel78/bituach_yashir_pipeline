@@ -39,3 +39,25 @@ def test_ingest_defaults_when_body_is_empty(client: TestClient) -> None:
     assert body["accepted"] is True
     assert body["source"] == "unknown"
     assert body["payload_keys"] == []
+
+
+def test_ingest_rejects_negative_claim_amount(client: TestClient) -> None:
+    response = client.post(
+        "/ingest",
+        json={"source": "test", "payload": {"claim_amount": -100}},
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    body = response.json()
+    assert body["error"] == "validation_error"
+    assert body["detail"] == "Request validation failed."
+
+
+def test_ingest_accepts_non_negative_claim_amount(client: TestClient) -> None:
+    response = client.post(
+        "/ingest",
+        json={"source": "test", "payload": {"claim_amount": 0}},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["accepted"] is True

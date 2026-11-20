@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IngestRequest(BaseModel):
@@ -18,6 +18,14 @@ class IngestRequest(BaseModel):
         default_factory=dict,
         description="Opaque event body. Echoed back only as keys, never as values.",
     )
+
+    @model_validator(mode="after")
+    def reject_negative_claim_amount(self) -> "IngestRequest":
+        """A claim amount, when supplied, must not be negative."""
+        amount = self.payload.get("claim_amount")
+        if isinstance(amount, (int, float)) and not isinstance(amount, bool) and amount < 0:
+            raise ValueError("claim_amount must be greater than or equal to zero")
+        return self
 
 
 class IngestAccepted(BaseModel):
