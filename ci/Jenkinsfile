@@ -25,10 +25,10 @@ pipeline {
     timeout(time: 45, unit: 'MINUTES')
   }
 
-  // Per-branch polling: the webhook-free equivalent of "build on push" for a
-  // laptop POC. git ls-remote does not consume the GitHub API quota; the
-  // multibranch folder itself re-indexes every 5 minutes (see the job bootstrap).
-  triggers { pollSCM('* * * * *') }
+  // Branch discovery and change detection are driven by the folder-level scan
+  // configured in 01-multibranch.groovy (every 5 minutes). Do not also poll
+  // per branch: the two triggers race and can build the same revision twice,
+  // which would rebuild an immutable release tag.
 
   environment {
     REGISTRY         = 'ghcr.io/danbarel78'

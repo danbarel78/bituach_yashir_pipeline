@@ -22,6 +22,9 @@ Staging and dev share the `develop` branch but not the same directory:
 a `develop` build touches only `gitops/overlays/dev`; a release build touches
 only `gitops/overlays/staging`.
 
+Jenkins scans the repository every 5 minutes. Use **Scan Multibranch Pipeline
+Now** if you do not want to wait for the next scan.
+
 ## Version and tag rules
 
 The developer never edits a version. `scripts/release.sh` is the only bump.
