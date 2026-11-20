@@ -1,0 +1,25 @@
+# metrics-server - backs the HorizontalPodAutoscaler API (autoscaling/v2).
+#
+# Docker Desktop does NOT ship metrics-server (verified: the
+# v1beta1.metrics.k8s.io APIService is absent), so HPA would report
+# "<unknown> target" without it.
+#
+# kubelet serves a self-signed certificate on this cluster, hence
+# --kubelet-insecure-tls. The remaining args mirror the chart defaults.
+
+args:
+  - --cert-dir=/tmp
+  - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+  - --kubelet-use-node-status-port
+  - --metric-resolution=15s
+  - --kubelet-insecure-tls
+
+replicas: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi

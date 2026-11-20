@@ -1,0 +1,33 @@
+# Staging environment Application.
+#
+# Same automated policy as dev. In the full GitFlow this tracks a release branch;
+# for Phase 3 every overlay tracks `develop` until promotion wiring exists.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bituach-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: staging
+    app.kubernetes.io/part-of: bituach-yashir
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/danbarel78/bituach_yashir_pipeline.git
+    targetRevision: develop
+    path: gitops/overlays/staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bituach-staging
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true

@@ -1,0 +1,53 @@
+# Per-service public hostnames for the production environment.
+#
+# See gitops/overlays/dev/ingress-services.yaml for the rationale. In production
+# this is also where a per-service WAF policy, rate limit and real ACME
+# certificate would attach.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bituach-services
+  labels:
+    app.kubernetes.io/part-of: bituach-yashir
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - engine.bituach.localhost
+        - data.bituach.localhost
+        - ingest.bituach.localhost
+      secretName: bituach-tls
+  rules:
+    - host: engine.bituach.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: engine
+                port:
+                  name: http
+    - host: data.bituach.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data
+                port:
+                  name: http
+    - host: ingest.bituach.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ingest
+                port:
+                  name: http

@@ -1,0 +1,43 @@
+# Dev environment Application.
+#
+# Automated sync with prune and self-heal: drift is corrected without a human.
+# This is also the drift self-heal demonstration (delete a pod / change a
+# Deployment by hand, watch Argo CD restore it).
+#
+# Namespace is NOT created by Argo CD (CreateNamespace=false): Terraform owns
+# environment namespaces, quota and RBAC.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bituach-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    environment: dev
+    app.kubernetes.io/part-of: bituach-yashir
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/danbarel78/bituach_yashir_pipeline.git
+    targetRevision: develop
+    path: gitops/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bituach-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

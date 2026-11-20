@@ -18,6 +18,20 @@ htmlcov/
 # Local agent / session state (not part of the deliverable)
 .opencode/
 
+# Terraform
+.terraform/
+.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
 # OS
 Thumbs.db
 .DS_Store

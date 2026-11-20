@@ -3,14 +3,24 @@
 
 Branch-driven increment logic (see docs/versioning.md):
 
-| branch / event     | computed version          | registry tags | deploys to |
-|--------------------|---------------------------|---------------|------------|
-| feature/<name>     | X.Y.Z-<branch>.N+<sha>    | not pushed    | nothing    |
-| develop            | X.Y.(Z+1)-dev.N+<sha>     | dev tags      | dev        |
-| release/X.Y.0      | X.Y.0-rc.N+<sha>          | rc tags       | staging    |
-| main + tag vX.Y.Z  | X.Y.Z (final)             | vX.Y.Z        | prod       |
-| hotfix/X.Y.Z       | X.Y.Z-hotfix.N+<sha>      | hotfix tags   | staging    |
-| anything else      | 0.0.0-local               | not pushed    | nothing    |
+| branch / event     | computed version              | registry tags | deploys to |
+|--------------------|-------------------------------|---------------|------------|
+| feature/<name>     | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| fix/<name>         | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| bugfix/chore/docs  | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| refactor/test/     | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| dependabot/*       | X.Y.(Z+1)-<slug>.N+<sha>      | not pushed    | nothing    |
+| develop            | X.Y.(Z+1)-dev.N+<sha>         | dev tags      | dev        |
+| release/X.Y.Z      | X.Y.Z-rc.N+<sha>              | rc tags       | staging    |
+| main + tag vX.Y.Z  | X.Y.Z (final)                 | vX.Y.Z        | prod       |
+| hotfix/X.Y.Z       | X.Y.Z-hotfix.N+<sha>          | hotfix tags   | staging    |
+| detached HEAD      | 0.0.0-local                   | not pushed    | nothing    |
+| unknown branch     | refused (exit 1)              | -             | -          |
+
+Feature-like branches use the *next* patch rather than the current one: after
+``v1.0.0`` a feature build is ``1.0.1-<slug>.N``, which sorts above the tag.
+Using the current patch would produce ``1.0.0-<slug>.N`` and the monotonicity
+guard would reject every feature build once a release exists.
 
 ``N`` = ``BUILD_NUMBER`` (Jenkins); defaults to ``0`` for local builds.
 ``<sha>`` = 7-character commit SHA.
@@ -44,6 +54,19 @@ SEMVER_RE = re.compile(
     r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 )
 BASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+
+# Branches that produce a pre-release build and never deploy. They all share
+# one rule: next patch + sanitised branch slug + build number + commit.
+FEATURE_PREFIXES = (
+    "feature/",
+    "fix/",
+    "bugfix/",
+    "chore/",
+    "docs/",
+    "refactor/",
+    "test/",
+    "dependabot/",
+)
 
 PrereleaseKey = tuple[tuple[int, int, str], ...]
 
@@ -103,6 +126,12 @@ def compute_version(
     mj, mi, pa = base
     tag_ref = f"v{mj}.{mi}.{pa}"
 
+    # Detached HEAD is a local convenience only: never pushed, never deployed.
+    # It must be checked before the branch-name policy so a local experiment
+    # does not have to pretend to be a branch.
+    if branch in ("", "HEAD"):
+        return "0.0.0-local"
+
     if branch == "main":
         exact = git("describe", "--exact-match", "--tags", "HEAD")
         if exact and BASE_TAG_RE.match(exact):
@@ -111,7 +140,7 @@ def compute_version(
                     f"main tag {exact} does not equal base_version.json "
                     f"({tag_ref}) - refusing to build"
                 )
-            return tag_ref
+            return f"{mj}.{mi}.{pa}"
         if (mj, mi, pa) == (0, 0, 0) and released is None:
             return "0.0.0-local"  # never released; scaffolding builds only
         sys.exit("main builds must come from a tag whose value equals base_version.json")
@@ -119,9 +148,13 @@ def compute_version(
     if branch == "develop":
         return f"{mj}.{mi}.{pa + 1}-dev.{build}+{sha}"
 
-    if branch.startswith("feature/"):
-        slug = re.sub(r"[^0-9a-zA-Z-]", "-", branch.removeprefix("feature/")).strip("-")
-        return f"{mj}.{mi}.{pa}-{slug or 'feature'}.{build}+{sha}"
+    for prefix in FEATURE_PREFIXES:
+        if branch.startswith(prefix):
+            slug = re.sub(
+                r"[^0-9a-zA-Z-]", "-", branch.removeprefix(prefix)
+            ).strip("-")
+            # Next patch, not the current one: 1.0.1-x sorts above v1.0.0.
+            return f"{mj}.{mi}.{pa + 1}-{slug or 'feature'}.{build}+{sha}"
 
     if branch.startswith("release/"):
         m = re.fullmatch(r"release/(\d+)\.(\d+)\.(\d+)", branch)
@@ -135,7 +168,11 @@ def compute_version(
             sys.exit(f"hotfix branch must be named hotfix/X.Y.Z, got {branch!r}")
         return f"{m[1]}.{m[2]}.{m[3]}-hotfix.{build}+{sha}"
 
-    return "0.0.0-local"
+    sys.exit(
+        f"unsupported branch name: {branch!r}\n"
+        "supported: develop, main, release/X.Y.Z, hotfix/X.Y.Z, "
+        + ", ".join(f"{prefix}*" for prefix in FEATURE_PREFIXES)
+    )
 
 
 def version_key(version: str) -> tuple[tuple[int, int, int], tuple[int, PrereleaseKey]]:

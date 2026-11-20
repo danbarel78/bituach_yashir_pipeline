@@ -1,0 +1,56 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Development environment overlay.
+#
+# What the overlay owns (everything environment-specific):
+#   * namespace
+#   * image tag / digest (never "latest")
+#   * replica count
+#   * ENVIRONMENT value, injected through a generated ConfigMap
+#   * the public Ingress host
+#
+# What it does NOT own: probes, security context, rolling-update strategy and
+# the base resource shape - those are identical everywhere and live in base/.
+#
+# Base resources already carry the dev profile (50m/250m, 64Mi/128Mi); staging
+# and prod patch them upward.
+
+namespace: bituach-dev
+
+resources:
+  - ../../base/engine
+  - ../../base/data
+  - ../../base/ingest
+  - ingress.yaml
+  - ingress-services.yaml
+
+# Images are pinned by digest, not tag. A tag is mutable - it can be moved to
+# different bytes - so the digest is the only honest answer to "what is
+# deployed?". The three digests below were published to GHCR on 2026-11-18
+# from tag 0.0.1-dev.0-11e3604 and verified with a logged-out pull.
+images:
+  - name: ghcr.io/danbarel78/bituach-yashir-engine
+    digest: sha256:308196e06ed81d63c706f00c0a87c7296e90928aac8732e2b98e5b91596b9426
+  - name: ghcr.io/danbarel78/bituach-yashir-data
+    digest: sha256:3b90f9d411d70b589a6318561373a1125f43d1f25f664a1c84e2bd869341aa6a
+  - name: ghcr.io/danbarel78/bituach-yashir-ingest
+    digest: sha256:3df7e01733b942fb5765a78dbd1f53d7910ed961d68e34475ce35147ac5df27a
+
+# One replica per service: no autoscaling in dev (HPA is disabled by design).
+replicas:
+  - name: engine
+    count: 1
+  - name: data
+    count: 1
+  - name: ingest
+    count: 1
+
+configMapGenerator:
+  - name: bituach-env
+    literals:
+      - ENVIRONMENT=dev
+
+generatorOptions:
+  # The Deployments reference "bituach-env" by name, so no hash suffix.
+  disableNameSuffixHash: true

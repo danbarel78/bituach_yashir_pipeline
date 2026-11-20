@@ -1,0 +1,67 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging environment overlay.
+#
+# Differences from dev (handoff.md §4): 2 replicas per service, 100m/500m CPU,
+# 128Mi/256Mi memory. Promoted from a release branch in the full GitFlow; for
+# Phase 3 all overlays track `develop` and promotion switching lands with the
+# Jenkinsfile.
+
+namespace: bituach-staging
+
+resources:
+  - ../../base/engine
+  - ../../base/data
+  - ../../base/ingest
+  - ingress.yaml
+  - ingress-services.yaml
+
+# Images are pinned by digest: staging receives a specific, immutable build,
+# never "whatever the tag points at today". Same digests as dev for this first
+# cutover; promotion later repoints only this overlay.
+images:
+  - name: ghcr.io/danbarel78/bituach-yashir-engine
+    digest: sha256:9fd668985f49994a87bb1684cf1b8f3e8ea6a455ab93ca57e59157b0b07110f2
+  - name: ghcr.io/danbarel78/bituach-yashir-data
+    digest: sha256:1ba78089f677dcc4b0cd2535dac9d691a11f260a52447fa4739d29fbd70f008d
+  - name: ghcr.io/danbarel78/bituach-yashir-ingest
+    digest: sha256:9f95faacc6e7afb3d2022f7651ff63d7434a3d31dab2610eb59076d6712a6080
+
+# minReplicas of the HPA is 2, so the declared count matches it. A rolling
+# update with maxUnavailable 0 therefore never dips below 2 ready pods.
+replicas:
+  - name: engine
+    count: 2
+  - name: data
+    count: 2
+  - name: ingest
+    count: 2
+
+configMapGenerator:
+  - name: bituach-env
+    literals:
+      - ENVIRONMENT=staging
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# One patch, applied to every Deployment in this overlay via the shared
+# part-of label - no per-service duplication.
+patches:
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/part-of=bituach-yashir
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 100m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 128Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi
