@@ -41,10 +41,19 @@ The developer never edits a version. `scripts/release.sh` is the only bump.
 `<N>`, `<M>`, `<K>` are Jenkins build numbers. The Git tag keeps the `v`; the
 container tag does not. The overlay pins the image **digest**, not the tag.
 
-The table shows the **first release**. Once `v1.0.0` exists, the next cycle
-produces `1.0.1-negative-claim.<N>` (or `1.1.0-...` for a feature),
-`1.0.1-dev.<M>`, `1.0.1-rc.<K>`, and finally `1.0.1` / `v1.0.1`. The shape of
-every step is identical; only the numbers move.
+The table shows the **first release**. After `v1.0.0` exists, a fix or feature
+branch is still pre-released as `1.0.1-<slug>.<N>`; the **release branch**
+declares the target (`release/1.0.1`, `release/1.1.0`, …), and `release.sh`
+makes it official. For example:
+
+| Intent | Working branch | Release branch | `release.sh` | Final tag |
+|---|---|---|---|---|
+| Fix only | `fix/negative-claim` | `release/1.0.1` | `patch` | `v1.0.1` |
+| New feature | `feature/items-category-filter` | `release/1.1.0` | `minor` | `v1.1.0` |
+| Breaking change | `feature/new-contract` | `release/2.0.0` | `major` | `v2.0.0` |
+
+The release branch and the bump argument must agree; `release.sh` does not read
+the branch name.
 
 ## Step 1 — fix on a branch, merge to develop
 
@@ -259,6 +268,91 @@ and the monotonicity guard fails the build. If the merge conflicts, keep
 
 **Expected after the back-merge:** the next `develop` build reports
 `version=1.0.1-dev.<M>+<sha>` and deploys dev normally.
+
+## Minor release — `1.0.0` → `1.1.0`
+
+Use `feature/*` for new behaviour. A feature branch is still pre-released with
+the **next patch** (`1.0.1-...`); the minor number is declared by the release
+branch (`release/1.1.0`) and made official by `release.sh minor`.
+
+Example feature: add an optional category filter to the catalog.
+
+```bash
+git switch develop && git pull --ff-only
+git switch -c feature/items-category-filter
+
+# services/data/src/data/api/routers/items.py
+#   from fastapi import APIRouter, Query
+#   add: category: str | None = Query(default=None)
+# services/data/src/data/services/item_catalog.py
+#   filter the catalog by category when it is supplied
+# services/data/tests/test_items.py
+#   category=claim -> 2 items; no category -> 4 items
+
+git add services/data/src/data/api/routers/items.py services/data/src/data/services/item_catalog.py services/data/tests/test_items.py
+git commit -m "feat(data): filter the catalog by category"
+git push -u origin feature/items-category-filter
+```
+
+**Expected in Jenkins — feature branch**
+
+| Item | Value |
+|---|---|
+| Version line | `version=1.0.1-items-category-filter.<N>+<sha> ... target=none` |
+| `Push` / `GitOps` / `Smoke` | skipped |
+| Images | none pushed |
+
+After the PR is merged into `develop`:
+
+**Expected in Jenkins — develop build**
+
+| Item | Value |
+|---|---|
+| Version line | `version=1.0.1-dev.<M>+<sha> ... target=dev` |
+| `Smoke` | 9/9 |
+| dev `/items?category=claim` | `count: 2` (Gamma and Delta only) |
+| dev `/items` | `count: 4` (unchanged) |
+
+Cut the minor release and promote it:
+
+```bash
+git switch develop && git pull --ff-only
+git switch -c release/1.1.0
+git push -u origin release/1.1.0
+```
+
+**Expected in Jenkins — release build**
+
+| Item | Value |
+|---|---|
+| Version line | `version=1.1.0-rc.<K>+<sha> ... target=staging` |
+| `Push` | `1.1.0-rc.<K>-<sha>` images |
+| staging `/version` | `1.1.0-rc.<K>+<sha>` |
+| staging `/items?category=claim` | `count: 2` |
+
+Then release it:
+
+```bash
+git switch main && git pull --ff-only
+git merge --no-ff release/1.1.0
+./scripts/release.sh minor        # 1.0.0 -> 1.1.0
+git push origin main --follow-tags
+```
+
+**Expected in Jenkins — main build**
+
+| Item | Value |
+|---|---|
+| Version line | `version=1.1.0 tag=1.1.0 branch=main ... target=prod` |
+| Image tags | `1.1.0` |
+| `GitOps` | `chore(gitops): pin 1.1.0 [skip ci]` on `main` |
+| `Prod handoff` | `prod deploys only after a manual Sync` |
+
+After Sync, prod `/version` is `1.1.0` and `/items?category=claim` returns 2.
+Finish with the same back-merge and release-branch deletion as Step 5.
+
+A patch release is identical with `release/1.0.1` + `release.sh patch`; a
+breaking change uses `release/2.0.0` + `release.sh major`.
 
 ## Hotfix (same flow, three steps)
 
