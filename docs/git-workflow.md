@@ -1,8 +1,10 @@
 # Git workflow — developer change to production
 
-One page, four steps, three Jenkins builds and one manual approval. The
-example change is real: `POST /ingest` currently accepts a negative claim
-amount. The fix rejects it with `422`. Any change follows the same flow.
+One page, four steps, three promotion builds (dev, staging, prod) and one
+manual approval. The fix branch itself also gets a gate build; it pushes
+nothing. The example change is real: `POST /ingest` currently accepts a
+negative claim amount. The fix rejects it with `422`. Any change follows the
+same flow.
 
 ## The map
 
@@ -38,6 +40,11 @@ The developer never edits a version. `scripts/release.sh` is the only bump.
 
 `<N>`, `<M>`, `<K>` are Jenkins build numbers. The Git tag keeps the `v`; the
 container tag does not. The overlay pins the image **digest**, not the tag.
+
+The table shows the **first release**. Once `v1.0.0` exists, the next cycle
+produces `1.0.1-negative-claim.<N>` (or `1.1.0-...` for a feature),
+`1.0.1-dev.<M>`, `1.0.1-rc.<K>`, and finally `1.0.1` / `v1.0.1`. The shape of
+every step is identical; only the numbers move.
 
 ## Step 1 — fix on a branch, merge to develop
 
@@ -104,6 +111,10 @@ git push -u origin release/1.0.0
 Nothing else to click. The release build writes the staging overlay to
 `develop`, and the staging Application (which tracks `develop`) reconciles it.
 
+> `develop` often ends with a `chore(gitops): pin … [skip ci]` commit. The
+> release branch may be cut from that commit; the pipeline still builds it,
+> because `[skip ci]` only suppresses builds on `develop` and `main`.
+
 **Expected in Jenkins — release build**
 
 | Item | Value |
@@ -137,6 +148,10 @@ git push origin main --follow-tags
 `release.sh` bumps `base_version.json`, regenerates `CHANGELOG.md`, commits, and
 creates the annotated `v1.0.0` tag. `main` and the tag must be pushed together:
 the `main` branch build is the release build; tags alone do not trigger a build.
+
+The bump argument must match the release branch: first release `major`
+(`0.0.0 → 1.0.0`), a minor release `minor` (`1.0.0 → 1.1.0`), a patch `patch`
+(`1.0.0 → 1.0.1`).
 
 **Expected from `release.sh`**
 
@@ -259,6 +274,8 @@ triggers an untagged `main` build that fails by design.
 | Symptom | Cause / fix |
 |---|---|
 | The fix branch never appears in Jenkins | the job filter predates `fix/*`; update it in the UI or use `bugfix/*` |
+| Release build is `NOT_BUILT` with `skipped: [skip ci]` | the branch was cut from a pin commit with the old pipeline; merge `develop` into it so it gets the current Jenkinsfile |
+| Two builds run for the same revision | old dual trigger (folder scan + per-branch poll); current pipeline scans from the folder only — merge `develop` into the branch and rebuild |
 | `main builds must come from a tag` | `main` was pushed without the tag; push both together |
 | `version ... does not sort above newest existing tag` | the back-merge to `develop` is missing (step 5) |
 | `GitOps` stage fails with 403 | branch protection blocks the bot on `main` |

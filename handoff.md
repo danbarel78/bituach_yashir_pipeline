@@ -408,6 +408,7 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-19 | **Design deliverables written + coverage audited** | Added `docs/versioning.md` (GitFlow, SemVer, immutable tags vs `latest`, changelog, Rolling/Blue-Green/Canary comparison), `docs/secrets.md` (Vault → ESO threat model, target `ClusterSecretStore`/`ExternalSecret`/`secretKeyRef`, CI-time vs runtime, rotation, log hygiene), `docs/environment-topology.md` (namespace-vs-cluster justification, env matrix, Terraform walkthrough, sizing check) and `docs/requirements-coverage.md` (per-requirement audit). Added `CHANGELOG.md` baseline. Audit also recorded doc drift: gitleaks stage, rotation demo, tag-retention stage and `progressDeadlineSeconds` are **not** implemented despite earlier claims; the Vault dev token `root` **is** in `platform/values/vault.yaml` | P5 runtime secrets |
 | 2026-11-19 | **Developer→prod runbook + version mechanics corrected** | `docs/git-workflow.md` §9 rewritten as an executable two-path simulation: `fix/delta-value` → develop/dev → `release/1.0.0` → staging → `main`/`v1.0.0` → prod, plus `hotfix/1.0.1` from the tag. Every step has the command, expected console output, expected `/version`, and the evidence to capture. Added `fix/*` as a supported prefix (`version.py`, `test_version.py`, multibranch regex, Jenkinsfile comment); the `Version` stage now runs `git fetch --tags` so the tagged `main` build can prove the release. Corrected `handoff.md` §6 (tag vs image tag, next-patch pre-releases, release.sh bump, back-merge rule), §10 (actual stages; no retention/gitleaks stage) and §11 (prod manual sync, commit message, Argo values path, targetRevision gap). Recorded that the tag is a marker and the release build is the `main` branch build; Jenkins does not discover tags. No commit or push performed | Run the §9 simulation manually |
 | 2026-11-20 | **Runbook simplified to four steps + fixed Argo tracking** | `docs/git-workflow.md` reduced from 747 lines to one page: `fix/negative-claim` → develop (dev) → `release/1.0.0` (staging) → `main`/`v1.0.0` (prod, manual Sync) → back-merge. Each step has an **Expected output** block. Removed all per-release Argo retargeting: dev and staging track `develop`, prod tracks `main` after the one-time first-release cutover. Jenkinsfile now maps `release/*` **and `hotfix/*`** to `staging` with `TARGET_BRANCH=develop` (this also fixes the previously missing hotfix mapping). Realistic demo change: reject negative `claim_amount` on `POST /ingest` with 422. No manual version edits; `release.sh` is the only bump. | Run the four-step simulation live |
+| 2026-11-20 | **Four-step simulation executed end to end** | `fix/negative-claim` (`dce4269`) built green with `Push` skipped; merged to develop → `0.0.1-dev.12+36666d6`, dev negative claim `422`; `release/1.0.0` → `1.0.0-rc.4+8de8e60`, staging `422`; merged `main`, `release.sh major` → tag `v1.0.0`, main build pinned prod, one-time prod target `main`, manual Sync → prod `1.0.0` on 6 pods; smoke **27/27** (9 per env); back-merge → `1.0.1-dev.21+339f614`. Two defects found and fixed: (1) a release branch cut from a `[skip ci]` pin was skipped — the guard now applies only on `develop`/`main`; (2) folder scan + per-branch polling built the same revision twice and the second GitOps push conflicted — per-branch polling removed. PR #1 merged locally because the agent token is read-only. | P5 runtime secrets |
 
 ### Ingress host map (verified 2026-11-18)
 
@@ -443,51 +444,48 @@ Note: Windows does not resolve `*.localhost`; browsers do. Use
 
 ## 20. Next action
 
-**Run the four-step delivery simulation in `docs/git-workflow.md`.**
+**The four-step simulation completed successfully on 2026-11-20. Next: P5 —
+runtime secrets** (`docs/secrets.md` is the specification).
 
-Goal: prove the whole chain with one visible fix — `POST /ingest` must reject a
-negative `claim_amount`:
+Result of the live run:
 
-`fix/negative-claim` → PR → `develop` (CI → dev) → `release/1.0.0` (CI →
-staging) → `main` + `v1.0.0` (CI → prod overlay) → manual Argo CD Sync →
-verified in prod.
+| Stage | Version | Evidence |
+|---|---|---|
+| fix branch | `0.0.1-negative-claim.1+dce4269` | build SUCCESS; `Push`, `GitOps`, `Smoke` skipped |
+| develop | `0.0.1-dev.12+36666d6` | dev `/version`; negative claim `422`; smoke 9/9 |
+| release/1.0.0 | `1.0.0-rc.4+8de8e60` | staging `/version`; negative claim `422`; smoke 9/9 |
+| main | `1.0.0` / tag `v1.0.0` | `main` build SUCCESS; prod overlay pinned |
+| prod after Sync | `1.0.0` | 6 pods Ready; `Synced/Healthy`; negative `422`; smoke 9/9 |
+| develop after back-merge | `1.0.1-dev.21+339f614` | proves the back-merge removed the monotonicity trap |
 
-Versions on the first run (`base_version.json` is 0.0.0, no tags exist):
+Argo CD now tracks: dev `develop`, staging `develop`, prod `main`; all four
+applications are `Synced/Healthy`. `v1.0.0` exists and `base_version.json` is
+`1.0.0`.
 
-| Stage | Version | Image tag | Git tag | Environment |
-|---|---|---|---|---|
-| fix branch | `0.0.1-negative-claim.<N>+<sha>` | not pushed | — | — |
-| develop | `0.0.1-dev.<M>+<sha>` | `0.0.1-dev.<M>-<sha>` | — | dev |
-| release/1.0.0 | `1.0.0-rc.<K>+<sha>` | `1.0.0-rc.<K>-<sha>` | — | staging |
-| main | `1.0.0` | `1.0.0` | `v1.0.0` | prod (manual Sync) |
+Two real defects were found and fixed by running the flow:
 
-The flow uses **fixed Argo CD tracking**: dev and staging track `develop`, prod
-tracks `main` after the first release. A release/hotfix build writes only the
-staging overlay, so there is no per-release retargeting. The one-time prod
-switch happens after the main merge, when `main` actually contains
-`gitops/overlays/prod`.
+1. **Release branch skipped as `[skip ci]`.** The release branch was cut from a
+   develop HEAD that carried the digest-pin commit, so `Preflight` skipped it.
+   The guard now honours `[skip ci]` only on `develop` and `main`; feature,
+   release and hotfix branches always build.
+2. **Duplicate build of the same revision.** The folder scan and the per-branch
+   `pollSCM` both triggered the same release commit; the second build rebuilt
+   the same `rc` tag and its GitOps push conflicted. Per-branch polling was
+   removed; the 5-minute folder scan is the single trigger.
 
-Preconditions before Step 1:
+Notes:
+- PR #1 was merged locally because the agent's GitHub token is read-only; the
+  PR remains open and can be closed in the UI. The merge commit is on `develop`.
+- The `release/1.0.0` branch was deleted after the back-merge; the local branch
+  can be pruned.
+- `main` on the local clone is one commit behind the pipeline's prod pin; a
+  `git pull --ff-only` on `main` brings it current.
+- Hotfix mapping (`release/*` and `hotfix/*` → staging, pin on `develop`) is
+  implemented and unit-verified through the same code path; the full hotfix
+  release was not repeated to avoid creating a second production release during
+  the demo.
 
-1. **Merge the current chore branch (PR #1)** — it contains the shortened
-   runbook, `fix/*` support, the tag fetch, the `release.sh` clean-tree guard
-   and the `release/*` + `hotfix/*` → staging mapping.
-2. **WSL git identity** — `release.sh` commits the bump and tag:
-   `git config user.name "Daniel Barel"` / `user.email "dbarel@gmail.com"`.
-3. **Jenkins branch filter** — the running job predates `fix/*`; either refresh
-   the filter in the UI or use `bugfix/negative-claim` (same versions).
-4. **Main push permission** — `github-token` must be able to push the
-   `[skip ci]` digest commit to `main`; otherwise `GitOps` fails with 403.
-5. **First merge is large** — `main` is still `433f9ac` (scaffold only); the
-   release merge brings the whole tree and creates the `main` Jenkins job.
-
-Baseline verified 2026-11-19: cluster and all four Argo apps healthy, all apps
-track `develop`, no tags, dev `0.0.1-dev.5+877242a`, staging/prod
-`0.0.1-dev.0+11e3604`, `data` item 4 = `99.99`. `pwsh` is not installed; use
-`powershell -NoProfile -ExecutionPolicy Bypass -File .\ci\jenkins.ps1 <cmd>`.
-
-After the simulation, close the remaining deliverables in this order: P5
-runtime secrets (`docs/secrets.md` is the specification), gitleaks in
+After P5, close the remaining deliverables in this order: gitleaks in
 `Preflight`, tag retention, `README.md` + `docs/decisions.md`, then the
 observability/runbook documents.
 
