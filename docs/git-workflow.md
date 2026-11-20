@@ -1,10 +1,10 @@
 # Git workflow — developer change to production
 
-One page, four steps, three promotion builds (dev, staging, prod) and one
-manual approval. The fix branch itself also gets a gate build; it pushes
-nothing. The example change is real: `POST /ingest` currently accepts a
-negative claim amount. The fix rejects it with `422`. Any change follows the
-same flow.
+Four steps to production, one housekeeping step, three promotion builds (dev,
+staging, prod) and one manual approval. The fix branch itself also gets a gate
+build; it pushes nothing. The example change is real: `POST /ingest` currently
+accepts a negative claim amount. The fix rejects it with `422`. Any change
+follows the same flow.
 
 ## The map
 
@@ -58,7 +58,8 @@ git switch -c fix/negative-claim
 # services/ingest/tests/test_ingest.py
 # add: negative -> 422, positive -> 200, missing -> 200
 
-git commit -am "fix(ingest): reject negative claim amounts"
+git add services/ingest/src/ingest/schemas/ingest.py services/ingest/tests/test_ingest.py
+git commit -m "fix(ingest): reject negative claim amounts"
 git push -u origin fix/negative-claim
 ```
 
@@ -149,6 +150,11 @@ git push origin main --follow-tags
 creates the annotated `v1.0.0` tag. `main` and the tag must be pushed together:
 the `main` branch build is the release build; tags alone do not trigger a build.
 
+> If `main` is protected against direct pushes, merge `release/1.0.0` into
+> `main` through a pull request, then run `release.sh` and push the tag from
+> your local `main`. The rest of the flow is identical; the production approval
+> is still the Argo CD **Sync**.
+
 The bump argument must match the release branch: first release `major`
 (`0.0.0 → 1.0.0`), a minor release `minor` (`1.0.0 → 1.1.0`), a patch `patch`
 (`1.0.0 → 1.0.1`).
@@ -173,6 +179,15 @@ Verify before pushing: `git describe --exact-match --tags HEAD` → `v1.0.0`.
 | `GitOps` | `chore(gitops): pin 1.0.0 [skip ci]` on `main` |
 | `Wait` / `Smoke` | skipped for prod by design |
 | `Prod handoff` | `Argo CD will show bituach-prod as OutOfSync; prod deploys only after a manual Sync.` |
+
+Verify that the build wrote the production pin to `main`:
+
+```bash
+git fetch origin main
+git log --oneline -2 origin/main
+# 333ceff chore(gitops): pin 1.0.0 [skip ci]
+# e3d12b8 chore(release): v1.0.0
+```
 
 ### First release only — point prod at main
 
@@ -200,6 +215,13 @@ Later releases need no retargeting.
 ## Step 4 — approve and verify production
 
 Argo CD → `bituach-prod` → **Sync**. This is the production approval gate.
+
+CLI alternative (PowerShell; the patch file avoids quoting problems):
+
+```powershell
+Set-Content -Path "$env:TEMP\argo-sync.json" -Value '{"operation":{"sync":{"prune":false}}}' -Encoding ascii
+kubectl -n argocd patch application bituach-prod --type merge --patch-file "$env:TEMP\argo-sync.json"
+```
 
 ```powershell
 kubectl -n argocd get application bituach-prod
@@ -231,43 +253,86 @@ git push origin --delete release/1.0.0
 
 The back-merge brings `base_version.json` = 1.0.0 to `develop`. Without it the
 next develop build computes `0.0.1-dev.N`, which does not sort above `v1.0.0`,
-and the monotonicity guard fails the build.
+and the monotonicity guard fails the build. If the merge conflicts, keep
+`develop`'s overlay files (they point at the newest dev/staging images) and take
+`main`'s `base_version.json` and `CHANGELOG.md`.
 
 **Expected after the back-merge:** the next `develop` build reports
 `version=1.0.1-dev.<M>+<sha>` and deploys dev normally.
 
-## Hotfix (same flow, three commands)
+## Hotfix (same flow, three steps)
 
 ```bash
 git fetch --tags
 git switch -c hotfix/1.0.1 v1.0.0
-# fix, commit, push -> staging build (version 1.0.1-hotfix.<J>+<sha>)
-# merge to main -> ./scripts/release.sh patch -> push main+tag -> prod Sync
+# smallest possible fix + test
+git add -A
+git commit -m "fix(ingest): reject a negative claim source"
+git push -u origin hotfix/1.0.1
 ```
 
-Staging receives the hotfix overlay the same way a release does.
+**Expected in Jenkins — hotfix build**
+
+| Item | Value |
+|---|---|
+| Version line | `version=1.0.1-hotfix.<J>+<sha> ... target=staging` |
+| `Push` / `GitOps` | hotfix images; staging overlay pinned on `develop` |
+| `Smoke` | `All 9 smoke checks passed.` |
+| staging `/version` | `1.0.1-hotfix.<J>+<sha>` |
+
+Then release it exactly like a normal release, with `patch`:
+
+```bash
+git switch main && git pull --ff-only
+git merge --no-ff hotfix/1.0.1
+./scripts/release.sh patch        # 1.0.0 -> 1.0.1
+git push origin main --follow-tags
+```
+
+Expected: `v1.0.1` tag; `main` build `version=1.0.1 ... target=prod`; image
+`1.0.1`; prod `OutOfSync`; after Sync, prod `/version` is `1.0.1`.
+
+Finish with the same housekeeping as a normal release:
+
+```bash
+git switch develop && git pull --ff-only
+git merge --no-ff main && git push origin develop
+git push origin --delete hotfix/1.0.1
+```
+
+Staging receives the hotfix overlay the same way a release does; no retargeting.
 
 ## Rollback
 
 ```bash
 git switch main
-git log --oneline -5          # find chore(gitops): pin 1.0.1 [skip ci]
+git log --oneline -5 -- gitops/overlays/prod   # find the pin to undo
 git revert --no-commit <pin>
 git commit -m "revert(gitops): roll back prod to 1.0.0 [skip ci]"
 git push origin main
 ```
 
-Then Sync `bituach-prod` again. The revert must carry `[skip ci]`, otherwise it
-triggers an untagged `main` build that fails by design.
+Then Sync `bituach-prod` again. Expected: the App goes `OutOfSync`, Sync returns
+it to `Synced/Healthy`, and `/version` returns the previous release (for example
+`1.0.0`). The revert must carry `[skip ci]`, otherwise it triggers an untagged
+`main` build that fails by design.
 
-## One-time setup (not part of every change)
+## One-time setup (check before the first run)
 
-1. WSL git identity for `release.sh`:
-   `git config user.name "Daniel Barel"` and `git config user.email "dbarel@gmail.com"`.
-2. Jenkins branch filter accepts `fix/*` (or use `bugfix/*`).
-3. Jenkins credential `github-token` exists and can push to `main` and `develop`.
-4. `main` branch protection allows the pipeline to push the digest commit.
-5. Argo CD prod tracks `main` (the first-release step above).
+| Check | Command | Expected |
+|---|---|---|
+| Cluster | `kubectl get nodes` | `desktop-control-plane   Ready` |
+| Platform | `./scripts/verify.sh` (WSL) | `21/21 checks passed` |
+| Argo apps | `kubectl -n argocd get applications` | four `Synced/Healthy` |
+| WSL identity | `wsl -d Ubuntu -- bash -lc 'git config user.email'` | non-empty (needed by `release.sh`) |
+| Jenkins filter | `curl.exe -u admin:admin -s -o "$env:TEMP\job.xml" http://localhost:8080/job/bituach-yashir/config.xml; Select-String "$env:TEMP\job.xml" "regex"` | contains `fix/.+` or use `bugfix/*` |
+| Credential | `curl.exe -u admin:admin -s "http://localhost:8080/credentials/store/system/domain/_/api/json?tree=credentials[id]"` | `github-token` |
+| Main write path | GitHub → Settings → Branches → `main` | the pipeline identity can push the pin commit |
+| Prod tracking | `kubectl -n argocd get application bituach-prod -o jsonpath='{.spec.source.targetRevision}'` | `main` after the first release; `develop` before it |
+
+If `main` is protected, allow the `github-token` identity to bypass the PR rule
+(or temporarily allow direct pushes for the simulation). Without that, the
+`GitOps` stage fails with 403 after the images are pushed.
 
 ## Troubleshooting
 
