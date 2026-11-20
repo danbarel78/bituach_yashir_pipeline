@@ -5,7 +5,7 @@
 # Required environment:
 #   ENV_NAME       dev | staging | prod
 #   VERSION        the computed version, e.g. 0.0.1-dev.42+abc1234
-#   TARGET_BRANCH  branch to push to (develop | release/x.y.z | main)
+#   TARGET_BRANCH  branch to push to (develop | main)
 #   DIGESTS_FILE   file with "<service> <image>@sha256:..." lines
 #   REPO           owner/name on GitHub
 #   GIT_TOKEN      repository write token (masked by Jenkins)

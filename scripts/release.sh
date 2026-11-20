@@ -23,6 +23,14 @@ if [ "$branch" != "main" ]; then
   exit 1
 fi
 
+# A release commit should contain exactly the bump and the changelog. Refuse to
+# run with staged or unstaged tracked changes; untracked files are ignored.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "release.sh requires a clean working tree (tracked changes present)" >&2
+  git status --short >&2
+  exit 1
+fi
+
 # --- 1. bump base_version.json -------------------------------------------
 tag="$(python3 - "$bump" <<'PY'
 import json
