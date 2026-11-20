@@ -1,13 +1,43 @@
 # Changelog
 
-All notable changes to this project. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and are
-generated from Conventional Commits by `scripts/release.sh`.
+All notable changes to this project. Generated from Conventional Commits (Keep a Changelog format).
 
-`v0.0.0` below is the pre-release POC baseline, not a tagged release. The first
-real release (`v1.0.0`) will be prepended above it when `scripts/release.sh` runs
-on `main`.
+## [v1.0.0] - 2026-11-20
 
+### Added
+- feat(ci): stage release pins on develop and simplify the delivery runbook
+- feat(ci): accept fix/* branches and fetch tags for release builds
+- feat(ci): poll every branch once a minute
+- feat(ci): add containerised Jenkins pipeline with digest write-back
+- feat(gitops): pin service images by digest from GHCR
+- feat(services): add data /items and ingest /ingest endpoints, expose per-service hostnames
+- feat(infra): add Terraform environment modules and GitOps base/overlays with app-of-apps
+- feat(platform): install ingress, metrics-server, Argo CD, Vault and ESO with bootstrap scripts
+- feat: add engine, data, ingest FastAPI services
+
+### Fixed
+- fix(ci): scan branches only from the folder to avoid duplicate builds
+- fix(ci): only honour [skip ci] on integration branches
+- fix(ingest): reject negative claim amounts
+- fix(release): require a clean working tree
+- fix(ci): force an Argo CD refresh before waiting for the new revision
+- fix(ci): wait for the pushed revision and resolve the smoke host over IPv4
+- fix(ci): isolate the Trivy cache per build
+- fix(ci): install buildx and grant the socket group to the controller
+- fix(images): apply Debian security updates and fail only on fixable CVEs
+- fix(ci): build with BuildKit so cache mounts in the Dockerfiles work
+- fix(ci): exclude the local project from the dependency audit export
+- fix(services): pin container user to numeric uid 10001 so runAsNonRoot is verifiable
+- fix(data): repair duplicate pyproject keys and undefined names blocking quality gates
+
+### Chore
+- chore(gitops): pin 1.0.0-rc.2+830c0c3 [skip ci]
+- chore(gitops): pin 0.0.1-dev.12+36666d6 [skip ci]
+- chore(gitops): pin 0.0.1-dev.9+f31ed9e [skip ci]
+- chore(gitops): pin 0.0.1-dev.5+877242a [skip ci]
+- chore(gitops): pin 0.0.1-dev.4+c04dd43 [skip ci]
+- chore(gitops): pin 0.0.1-dev.2+7d4e031 [skip ci]
+- chore: scaffold version tooling and project baseline
 ## [v0.0.0] - 2026-11-19
 
 ### Added
