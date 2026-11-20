@@ -44,11 +44,17 @@ pipeline {
       steps {
         script {
           def message = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-          env.SKIP_CI = message.contains('[skip ci]') ? 'true' : 'false'
+          // [skip ci] exists to stop the digest-pin commit from re-triggering a
+          // build on the branch it was pushed to (develop or main). A release,
+          // hotfix or feature branch may legitimately be cut from such a commit,
+          // so only skip on the integration branches.
+          def branch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+          def integrationBranch = (branch == 'develop' || branch == 'main')
+          env.SKIP_CI = (message.contains('[skip ci]') && integrationBranch) ? 'true' : 'false'
           if (env.SKIP_CI == 'true') {
             currentBuild.result = 'NOT_BUILT'
             currentBuild.description = 'skipped: [skip ci]'
-            echo 'Commit is marked [skip ci] - the GitOps commit cannot trigger itself.'
+            echo 'Commit is marked [skip ci] on an integration branch - the GitOps commit cannot trigger itself.'
           }
         }
         script {
