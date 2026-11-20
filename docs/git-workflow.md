@@ -6,6 +6,10 @@ build; it pushes nothing. The example change is real: `POST /ingest` currently
 accepts a negative claim amount. The fix rejects it with `422`. Any change
 follows the same flow.
 
+> Visual walkthrough: [`architecture-deck.html`](../architecture-deck.html) —
+> 16 slides, keyboard navigation (`→`/`Space`, `←`, `F`), opens directly on
+> `file://`.
+
 ## The map
 
 ```
