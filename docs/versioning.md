@@ -433,8 +433,8 @@ versions can coexist during a rollout.
 | `/version` reports build identity | service endpoint, smoke test | implemented |
 | RollingUpdate with zero-downtime settings | `gitops/base/*/deployment.yaml` | implemented |
 | Changelog generation | `scripts/release.sh`, `CHANGELOG.md` | implemented (baseline) |
-| Full developer→prod runbook | `docs/git-workflow.md` | documented; first execution pending |
+| Full developer→prod runbook | `docs/git-workflow.md` | executed 2026-11-20 (dev → staging → prod) |
 | Argo CD promotion wiring | dev/staging track `develop`; prod tracks `main` after the first release | implemented (first-release cutover) |
-| First real release `v1.0.0` | `base_version.json` still `0.0.0`, no tags | **not done** |
+| First real release `v1.0.0` | tag `v1.0.0`; prod runs `1.0.0` | **done 2026-11-20** |
 | Automated tag retention (last 3) | no Jenkins stage | **not done** |
 | Canary / blue-green | design in §6.2 | documented only |

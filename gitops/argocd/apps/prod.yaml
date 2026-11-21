@@ -5,8 +5,8 @@
 # gate from handoff.md §10, and the reason prod can never be changed by a merge
 # alone.
 #
-# In the full GitFlow this tracks main / a vX.Y.Z tag; for Phase 3 it tracks
-# develop so the POC can demonstrate all three environments from one commit.
+# Production is deployed only from main. A human Sync is the approval gate;
+# the tagged main build is the only writer of this overlay's digests.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -22,7 +22,7 @@ spec:
 
   source:
     repoURL: https://github.com/danbarel78/bituach_yashir_pipeline.git
-    targetRevision: develop
+    targetRevision: main
     path: gitops/overlays/prod
 
   destination:
