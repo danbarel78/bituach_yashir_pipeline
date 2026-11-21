@@ -31,6 +31,7 @@ class IngestRequest(BaseModel):
 class IngestAccepted(BaseModel):
     """Acknowledgement returned by POST /ingest."""
 
+    # this is only for checking purposes
     model_config = ConfigDict(populate_by_name=True)
 
     service: str = Field(description="Name of the service that accepted the event.")
