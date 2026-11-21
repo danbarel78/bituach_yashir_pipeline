@@ -2,6 +2,8 @@
 
 All notable changes to this project. Generated from Conventional Commits (Keep a Changelog format).
 
+## [v1.0.4] - 2026-11-21
+
 ## [v1.0.3] - 2026-11-21
 
 ## [v1.0.2] - 2026-11-21
