@@ -17,6 +17,7 @@ router = APIRouter(tags=["service"])
 )
 async def read_service_name(settings: SettingsDep) -> ServiceNameResponse:
     """Return the logical service name."""
+    # this is for for testing puproses
     return build_service_name(settings)
 
 
