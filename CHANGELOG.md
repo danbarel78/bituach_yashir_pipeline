@@ -2,6 +2,11 @@
 
 All notable changes to this project. Generated from Conventional Commits (Keep a Changelog format).
 
+## [v1.0.2] - 2026-11-21
+
+### Fixed
+- fix(ingest): format IngestAccepted for ruff [skip ci]
+
 ## [v1.0.1] - 2026-11-21
 
 ### Fixed
