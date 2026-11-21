@@ -80,23 +80,25 @@ Two checks are kept **implemented** despite being outside the strict letter, bec
 | Secrets | Vault (dev mode) → ESO → `ExternalSecret` → k8s Secret → `secretKeyRef` env var; `ClusterSecretStore` per namespace; GHCR push credential in Jenkins; gitleaks stage; rotation demo |
 | Terraform | `modules/` + `envs/{dev,staging,prod}`: namespace, ResourceQuota, LimitRange, RBAC Role/RoleBinding, ServiceAccount, NetworkPolicy (default-deny + explicit allows), HPA, replica counts |
 | Manifests | requests/limits, `strategy.rollingUpdate` (`maxSurge: 1`, `maxUnavailable: 0`), probes, securityContext, Service `ClusterIP`, Ingress + TLS (self-signed secret) |
-| Version tooling | `base_version.json`, `ci/scripts/version.py`, `scripts/release.sh`, `CHANGELOG.md` |
+| Version tooling | `base_version.json`, `ci/scripts/version.py`, `scripts/release.sh`, `scripts/release.ps1` (Windows equivalent; untracked), `CHANGELOG.md` |
 | Docs | `README.md`, `docs/decisions.md` (1 pager), `docs/git-workflow.md`, `docs/versioning.md`, `docs/architecture.md`, `docs/secrets.md`, `docs/environment-topology.md`, `docs/observability-design.md`, `docs/runbook.md` |
+| Delivery walkthrough | `architecture-deck.html` + vendored `aws-icons/`; self-contained visual runbook with keyboard navigation |
 
 ### Documented only (designed, not deployed)
 
 Prometheus / Grafana / Alertmanager stack and dashboards · alert rules and routing · SLO/SLA matrix per environment · Argo Rollouts canary and blue-green with migration path · PodDisruptionBudgets and anti-affinity · multi-cluster production topology · Vault production hardening (Raft, auto-unseal, k8s auth) · human RBAC matrix · private GHCR + `imagePullSecret` via ESO · Jenkins/CI observability · cost and quota management.
 
-> **Status correction (2026-11-19).** The table above is the **target end
+> **Status correction (2026-11-21).** The table above is the **target end
 > state**, not a verified checklist. Current gaps, confirmed by reading the
 > code: no `ExternalSecret`/`ClusterSecretStore`/`secretKeyRef` (P5), no
 > gitleaks stage, no rotation demo, no tag-retention stage, no
-> `progressDeadlineSeconds`, and no `README.md`, `docs/decisions.md`,
+> `progressDeadlineSeconds`, and no `docs/decisions.md`,
 > `docs/architecture.md`, `docs/observability-design.md` or `docs/runbook.md`.
 > The reliable status is the milestone log (§18) plus
 > `docs/requirements-coverage.md`. The design documents that do exist are
 > `docs/versioning.md`, `docs/secrets.md`, `docs/environment-topology.md` and
-> `docs/git-workflow.md`.
+> `docs/git-workflow.md`; the visual walkthrough is `architecture-deck.html`.
+> `README.md` was added on 2026-11-21 and is the reviewer-facing entry point.
 
 ---
 
@@ -204,6 +206,7 @@ into `develop` brings the new `base_version.json` and the next build becomes
 ### Release, changelog, rollout
 
 - `scripts/release.sh` (no `gh`): bump `base_version.json` → regenerate `CHANGELOG.md` from Conventional Commits → commit → annotated tag → print the exact `git push` commands.
+- `scripts/release.ps1` mirrors `release.sh` for Windows PowerShell, including `-DryRun` and an `origin/main` containment guard; see §20 for its current commit status.
 - `CHANGELOG.md`: Keep-a-Changelog format, generated from Conventional Commits (`feat:`, `fix:`, `chore:`, `BREAKING CHANGE:`), grouped by version.
 - Rollout strategy: **RollingUpdate** as the declared strategy (`maxSurge: 1`, `maxUnavailable: 0`); Blue-Green and Canary documented as the production evolution with an Argo Rollouts migration path.
 
@@ -374,12 +377,14 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 |---|---|---|---|
 | 1 | **Documentation language** (Q5) | User | **RESOLVED 2026-11-18 — English only** |
 | 2 | Downgrade the two 15-min proofs to documentation? | User | **RESOLVED 2026-11-18 — keep both implemented** |
-| 3 | Create GitHub PAT (`write:packages`, `read:packages`) | User | due at Phase 4 |
-| 4 | Repository `danbarel78/bituach_yashir_pipeline` public | User | confirmed public; observed empty (no branches) |
+| 3 | Create GitHub PAT (`write:packages`, `read:packages`) | User | **RESOLVED 2026-11-21** — stored only as Jenkins credential `github-token`; see §20 |
+| 4 | Repository `danbarel78/bituach_yashir_pipeline` public | User | **RESOLVED 2026-11-21** — populated; `main`/`develop` and tags through `v1.0.4` exist |
 | 5 | Switch session from Plan mode to build agent | User | **RESOLVED 2026-11-18 — build mode active** |
 | 6 | Parts 2 and 3 text | User | promised after Part 1 |
 | 7 | `uv` dependency manager (Tier-1 policy requirement) | Agent | **RESOLVED** — installed in P1; `uv.lock` committed per service |
 | 8 | `kubectl` + `helm` in WSL2 `Ubuntu` (Q1 requires Linux tooling) | Agent | **RESOLVED 2026-11-18** — kubectl 1.37.2 + helm 4.3.2 in `~/.local/bin`; kubeconfig copied from Windows |
+| 9 | Commit `scripts/release.ps1` and add the Windows command note to `docs/git-workflow.md` | Agent | open — script is untracked; runbook still shows `release.sh` only |
+| 10 | Back-merge `main` (`v1.0.4`) into `develop` and confirm the next develop build | Agent | open — `develop` has `base_version.json` `1.0.2`; develop build #30 failed |
 
 ---
 
@@ -410,6 +415,12 @@ Every phase ends with a commit on the appropriate branch so the GitFlow history 
 | 2026-11-20 | **Runbook simplified to four steps + fixed Argo tracking** | `docs/git-workflow.md` reduced from 747 lines to one page: `fix/negative-claim` → develop (dev) → `release/1.0.0` (staging) → `main`/`v1.0.0` (prod, manual Sync) → back-merge. Each step has an **Expected output** block. Removed all per-release Argo retargeting: dev and staging track `develop`, prod tracks `main` after the one-time first-release cutover. Jenkinsfile now maps `release/*` **and `hotfix/*`** to `staging` with `TARGET_BRANCH=develop` (this also fixes the previously missing hotfix mapping). Realistic demo change: reject negative `claim_amount` on `POST /ingest` with 422. No manual version edits; `release.sh` is the only bump. | Run the four-step simulation live |
 | 2026-11-20 | **Four-step simulation executed end to end** | `fix/negative-claim` (`dce4269`) built green with `Push` skipped; merged to develop → `0.0.1-dev.12+36666d6`, dev negative claim `422`; `release/1.0.0` → `1.0.0-rc.4+8de8e60`, staging `422`; merged `main`, `release.sh major` → tag `v1.0.0`, main build pinned prod, one-time prod target `main`, manual Sync → prod `1.0.0` on 6 pods; smoke **27/27** (9 per env); back-merge → `1.0.1-dev.21+339f614`. Two defects found and fixed: (1) a release branch cut from a `[skip ci]` pin was skipped — the guard now applies only on `develop`/`main`; (2) folder scan + per-branch polling built the same revision twice and the second GitOps push conflicted — per-branch polling removed. PR #1 merged locally because the agent token is read-only. | P5 runtime secrets |
 
+| 2026-11-21 | **PR #2/#3 merged + Ruff fix + Windows release path** | `fix/negativ-claim-change` merged through PR #2 (`59a4537`); follow-up whitespace changes merged through PR #3 (`4f3fbbd`). `81a836c` fixed the Ruff `W291` and missing blank line in `services/ingest/src/ingest/schemas/ingest.py`, clearing the lint gate that blocked the first release attempt. Added `scripts/release.ps1`, a PowerShell port of `release.sh` with `-DryRun` and an `origin/main` containment guard; tested in a temporary clone. It is untracked. | Commit release.ps1 + Windows note |
+| 2026-11-21 | **v1.0.1–v1.0.4 released; v1.0.4 in production** | Tags `v1.0.1`, `v1.0.2`, `v1.0.3` and `v1.0.4` exist. `v1.0.2` followed the Ruff fix. `v1.0.3` was a one-time correction of an orphan tag: it was rebased onto the `v1.0.2` pin and the unused tag was replaced; it was never built or deployed. `v1.0.4` is the current production release; `main` build #7 SUCCESS (`1.0.4 -> prod`), build #8 NOT_BUILT (`[skip ci]`). | Back-merge develop |
+| 2026-11-21 | **Develop back-merge still pending** | Local `main` is `303584e` (`chore(release): v1.0.4`); `origin/main` is `087a823` (`chore(gitops): pin 1.0.4 [skip ci]`). `develop` is `65c1405` with `base_version.json` still `1.0.2`, so a develop build would compute `1.0.3-dev` and fail the monotonicity guard; develop build #30 is FAILURE. Pull `origin/main` before the next release, then merge `main` into `develop`. | Pull main, commit release.ps1, back-merge |
+| 2026-11-21 | **Runbook, coverage and visual deck updated** | `docs/git-workflow.md` includes Windows PowerShell commands and the four-step runbook; `docs/requirements-coverage.md` records the requirement audit; `architecture-deck.html` plus vendored `aws-icons/` provide the visual walkthrough. `docs/versioning.md` and `docs/secrets.md` remain the versioning and secrets references. | Add release.ps1 command note |
+| 2026-11-21 | **Reviewer-facing README added** | `README.md` documents the architecture, quick start, local tests, Jenkins pipeline, release flow, secrets status, Terraform boundary, key decisions, implemented-versus-designed scope, documentation index and troubleshooting. | Commit README and release.ps1 |
+
 ### Ingress host map (verified 2026-11-18)
 
 | Environment | Per-service hosts | Path-prefix host |
@@ -436,13 +447,41 @@ Note: Windows does not resolve `*.localhost`; browsers do. Use
 | Missing | `kind`, `minikube`, `k3d`, `jenkins`, `argocd` CLI, `vault` CLI, `trivy`, `gh` |
 | Git identity | `Daniel Barel <dbarel@gmail.com>` |
 | Git config | `core.autocrlf=true`, `init.defaultBranch=master` |
-| Remote | `origin` on GitHub. `main` = `433f9ac` (scaffold only, no Jenkinsfile/overlays yet); `develop` = `82cb5cb` (P4 complete, 0.0.1-dev.5). Remote branches exist and CI polls them (as of 2026-11-19). |
+| Remote | `origin` on GitHub. Local `main` = `303584e` (`chore(release): v1.0.4`); `origin/main` = `087a823` (`chore(gitops): pin 1.0.4 [skip ci]`). `develop` = `65c1405` (merge `main`; `base_version.json` still `1.0.2`). Tags `v1.0.0`–`v1.0.4` exist. CI uses the 5-minute folder scan (as of 2026-11-21). |
 | Python note | `python` resolves to msys64 3.12.7; `py -3.11` also available |
 | Skills present | `python-standards` (Tier-1), `python-craft` (advisory), `python-review` (combined), `backend-Standards` (FastAPI extension), `architecture-ux-generate-flow` |
 
 ---
 
-## 20. Next action
+## 20. Current status and next action
+
+**As of 2026-11-21, `v1.0.4` is the current production release.** The
+four-step workflow has been exercised repeatedly; the remaining work is
+release housekeeping and P5 (runtime secrets), not the v1.0.0 simulation.
+
+| Item | Current value |
+|---|---|
+| Production release | `v1.0.4` (`303584e`); `main` build #7 SUCCESS (`1.0.4 -> prod`) |
+| Tags | `v1.0.0`, `v1.0.1`, `v1.0.2`, `v1.0.3`, `v1.0.4` |
+| Local `main` | `303584e` (`chore(release): v1.0.4`) |
+| `origin/main` | `087a823` (`chore(gitops): pin 1.0.4 [skip ci]`) — pull before the next release |
+| `develop` | `65c1405`; `base_version.json` still `1.0.2` |
+| Develop build | #30 FAILURE; until the back-merge, a build computes `1.0.3-dev` and trips the monotonicity guard |
+| Windows release path | `scripts/release.ps1` implemented and dry-run tested; untracked |
+| Runbook gap | `docs/git-workflow.md` still needs the `release.ps1` Windows command note |
+
+### Next actions (in order)
+
+1. `git switch main` and `git pull --ff-only origin main` to pick up `087a823`.
+2. Commit `scripts/release.ps1` and the `docs/git-workflow.md` Windows note with `[skip ci]`; push `main`.
+3. `git switch develop` and `git pull --ff-only origin develop`, then `git merge --no-ff main` and push. Confirm the next develop build computes `1.0.5-dev.N+<sha>` and succeeds.
+4. Verify prod `/version` reports `1.0.4` if that evidence is not already captured.
+5. Resume P5 runtime secrets (`docs/secrets.md` is the specification).
+
+### Historical v1.0.0 baseline (2026-11-20)
+
+> The material below is retained as the v1.0.0 baseline. Its "Next: P5" line
+> is superseded by the current status above.
 
 **The four-step simulation completed successfully on 2026-11-20. Next: P5 —
 runtime secrets** (`docs/secrets.md` is the specification).
@@ -474,8 +513,9 @@ Two real defects were found and fixed by running the flow:
    removed; the 5-minute folder scan is the single trigger.
 
 Notes:
-- PR #1 was merged locally because the agent's GitHub token is read-only; the
-  PR remains open and can be closed in the UI. The merge commit is on `develop`.
+- PR #1, PR #2 and PR #3 were merged; the agent's GitHub token is read-only,
+  so merges were pushed from the local clone. The original PR #1 can be closed
+  in the UI if it is still open.
 - The `release/1.0.0` branch was deleted after the back-merge; the local branch
   can be pruned.
 - `main` on the local clone is one commit behind the pipeline's prod pin; a
