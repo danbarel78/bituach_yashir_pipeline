@@ -2,6 +2,18 @@
 
 All notable changes to this project. Generated from Conventional Commits (Keep a Changelog format).
 
+## [v1.0.1] - 2026-11-21
+
+### Fixed
+- fix: changes for running simulation
+
+### Chore
+- chore(gitops): pin 1.0.1-dev.21+339f614 [skip ci]
+- chore(argocd): track main in prod [skip ci]
+- chore(gitops): pin 1.0.0 [skip ci]
+- chore(gitops): pin 1.0.0-rc.4+8de8e60 [skip ci]
+- chore(gitops): pin 0.0.1-dev.17+8de8e60 [skip ci]
+
 ## [v1.0.0] - 2026-11-20
 
 ### Added
