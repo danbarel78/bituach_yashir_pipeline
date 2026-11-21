@@ -22,11 +22,11 @@ resources:
 # cutover; promotion later repoints only this overlay.
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine
-    digest: sha256:505b85557c6225d9cdeb91df37fc89dd12ee1c5040e8e4f5703232e5a17787eb
+    digest: sha256:f03cb63347b121b87a6ee4433dfb744a6fc2471e5e240efd35bac459bb40c0e2
   - name: ghcr.io/danbarel78/bituach-yashir-data
-    digest: sha256:2e1baa20586f0e929c813b6e2a385601f21de504dbcdd1dca453888f89f67a44
+    digest: sha256:5eb8ab4b5ea2099ee19abd1daabf84b55f2e77acd05d14d32276176e5d43417f
   - name: ghcr.io/danbarel78/bituach-yashir-ingest
-    digest: sha256:6d3ddb8dbfdaf372cddcb937b91346b566ef6205f4f3e51735eab0f7583ee81a
+    digest: sha256:86e12e6f1fc51d099a2420a77b5701af1831b03bc118ae6f8d52fb9e60354c91
 
 # minReplicas of the HPA is 2, so the declared count matches it. A rolling
 # update with maxUnavailable 0 therefore never dips below 2 ready pods.
