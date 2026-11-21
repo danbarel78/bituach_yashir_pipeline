@@ -25,11 +25,11 @@ resources:
 # bytes" is verifiable rather than assumed.
 images:
   - name: ghcr.io/danbarel78/bituach-yashir-engine
-    digest: sha256:aabba3b1b77764c224c06127416be289833b57d1610ed76c2eb50c7dc83503c6
+    digest: sha256:726e9f1eeea04e278ef88bbb2737c84ee1da5b803a76d7c2bfede1b058dbf4af
   - name: ghcr.io/danbarel78/bituach-yashir-data
-    digest: sha256:2c9d662292b884884002a9e312621d7f5c5d8fc4479a42f72c608096390d7725
+    digest: sha256:f2b24474422ebadb5a58092842246f7118583cde1c51b2acd06b42b026e62d06
   - name: ghcr.io/danbarel78/bituach-yashir-ingest
-    digest: sha256:e76766fcbc1a6402fd8b47771acf03b52cfc8dc97f8c5172ffca3065fb4d74c2
+    digest: sha256:e3dfbb844d14cb1622d2638ba318b014a33ead8e71d3d317de72811a8006c334
 
 replicas:
   - name: engine
